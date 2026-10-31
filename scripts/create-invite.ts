@@ -1,0 +1,16 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { CampaignClaims, signTicket } from "../apps/web/src/shared/server/tickets";
+import { loadLocalEnv } from "./lib/env";
+loadLocalEnv();
+const flag = (name: string) => { const at = process.argv.indexOf(name); return at < 0 ? undefined : process.argv[at + 1]; };
+const base = new URL(flag("--url") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000");
+if (base.protocol !== "https:" && !(base.protocol === "http:" && base.hostname === "localhost")) throw new Error("Use HTTPS or localhost");
+const hours = Number(flag("--hours") ?? 2);
+if (!Number.isFinite(hours) || hours <= 0 || hours > 24) throw new Error("--hours must be greater than 0 and at most 24");
+const issuedAt = Date.now(); const expiresAt = issuedAt + Math.round(hours * 3600000);
+const claims = CampaignClaims.parse({ kind: "campaign", campaignId: process.env.NEXT_PUBLIC_CAMPAIGN_ID ?? "halloween-2026", issuedAt, expiresAt });
+const invite = signTicket(claims, process.env.CAMPAIGN_SIGNING_SECRET ?? "");
+const urls = Object.fromEntries(["zh", "en"].map(locale => { const url = new URL("/play", base.origin); url.searchParams.set("lang", locale); url.searchParams.set("invite", invite); return [locale, url.href]; }));
+mkdirSync("artifacts/invites", { recursive: true });
+writeFileSync("artifacts/invites/latest.json", JSON.stringify({ expiresAt: new Date(expiresAt).toISOString(), urls }, null, 2), { mode: 0o600 });
+console.log(JSON.stringify({ status: "created", file: "artifacts/invites/latest.json", expiresAt: new Date(expiresAt).toISOString(), note: "Shareable event admission; forwarding allows paid voice until expiry. No vendor credentials included." }));

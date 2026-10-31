@@ -19,7 +19,8 @@
     "probe:relay": "tsx scripts/probe-relay.ts",
     "env:vercel": "tsx scripts/configure-vercel.ts",
     "telemetry:collect": "tsx scripts/collect-telemetry.ts",
-    "report:pilot": "tsx scripts/report-pilot.ts"
+    "report:pilot": "tsx scripts/report-pilot.ts",
+    "invite:create": "tsx scripts/create-invite.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",

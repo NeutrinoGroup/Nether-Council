@@ -1,0 +1,52 @@
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+const audio = vi.hoisted(() => ({ clear: vi.fn(), stop: vi.fn(), play: vi.fn(), mute: vi.fn(), start: vi.fn(async () => {}), rms: vi.fn(() => 0), isPlaying: vi.fn(() => false) }));
+vi.mock("../../apps/web/src/features/voice/audio/engine", () => ({ AudioEngine: class { start = audio.start; clear = audio.clear; stop = audio.stop; play = audio.play; mute = audio.mute; rms = audio.rms; isPlaying = audio.isPlaying; } }));
+import { VoiceClient, type VoiceView } from "../../apps/web/src/features/voice/client";
+class Socket {
+  static OPEN = 1; static instances: Socket[] = [];
+  readyState = 1; bufferedAmount = 0; sent: Record<string, unknown>[] = [];
+  onopen?: () => void; onclose?: (e: { code: number }) => void; onmessage?: (e: { data: string }) => void; onerror?: () => void;
+  constructor() { Socket.instances.push(this); }
+  send(text: string) { this.sent.push(JSON.parse(text)); }
+  close() { this.readyState = 3; }
+}
+const id = "11111111-1111-4111-8111-111111111111";
+let current: VoiceClient;
+let session: { id: string; characterId: string; locale: string; mode: string; createdAt: number; captureUntil: number; expiresAt: number };
+beforeEach(() => {
+  vi.useFakeTimers(); vi.clearAllMocks(); Socket.instances = [];
+  const now = Date.now(); session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  vi.stubGlobal("location", { protocol: "https:", host: "example.test" }); vi.stubGlobal("WebSocket", Socket);
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ session }) })));
+});
+afterEach(() => { current?.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+test("three reconnects keep session identity and original capture deadline", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; });
+  await current.start("en", "fixture");
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    const socket = Socket.instances.at(-1)!; socket.onopen?.();
+    expect(socket.sent[0]).toMatchObject({ type: "session.start", sessionId: id, epoch: attempt, seq: 0 });
+    expect(view?.session?.expiresAt).toBe(session.expiresAt);
+    socket.onclose?.({ code: 1011 });
+    await vi.advanceTimersByTimeAsync(5000);
+  }
+  expect(Socket.instances).toHaveLength(4);
+  expect(view).toMatchObject({ phase: "error", error: "RECONNECT_EXHAUSTED", reconnects: 3 });
+  expect(audio.clear).toHaveBeenCalled(); expect(audio.stop).toHaveBeenCalled();
+});
+test("previous connection callbacks cannot inject audio after reconnect or restart", async () => {
+  current = new VoiceClient(() => {}); await current.start("en", "fixture");
+  const old = Socket.instances[0]; old.onclose?.({ code: 1011 });
+  await vi.advanceTimersByTimeAsync(1250);
+  const event = { protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "audio.delta", responseId: "late", audio: "AAA=" };
+  old.onmessage?.({ data: JSON.stringify(event) }); expect(audio.play).not.toHaveBeenCalled();
+  current.stop();
+  Socket.instances.at(-1)?.onmessage?.({ data: JSON.stringify({ ...event, epoch: 1 }) });
+  expect(audio.play).not.toHaveBeenCalled();
+});
+test("capture deadline prevents a reconnect from extending microphone use", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  Socket.instances[0].onclose?.({ code: 1011 }); await vi.advanceTimersByTimeAsync(180000);
+  expect(view?.phase).toBe("ended"); expect(audio.stop).toHaveBeenCalled();
+  const total = Socket.instances.length; await vi.advanceTimersByTimeAsync(30000); expect(Socket.instances).toHaveLength(total);
+});

@@ -4,6 +4,7 @@ import { serverConfig } from "@/shared/server/config";
 import { cookieToken, readSession, sameOrigin } from "@/shared/server/tickets";
 import { relayVoice } from "@/features/voice/server/relay";
 export const runtime = "nodejs";
+export const preferredRegion = "hkg1";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 export async function GET(request: Request) {

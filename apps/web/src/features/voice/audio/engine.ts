@@ -23,16 +23,19 @@ export class AudioEngine {
       this.source.connect(this.capture); this.capture.connect(this.silent).connect(this.context.destination);
       this.analyser = this.context.createAnalyser(); this.analyser.fftSize = 256; this.analyser.connect(this.context.destination);
       this.capture.port.onmessage = ({ data }: MessageEvent<ArrayBuffer>) => {
-        if (this.disposed) return;
+        if (this.disposed || this.muted) return;
         const bytes = new Uint8Array(data);
-        if (this.muted) bytes.fill(0);
         let text = ""; for (const byte of bytes) text += String.fromCharCode(byte);
         onPcm(btoa(text));
       };
     } catch (error) { this.stop(); throw error; }
   }
+  isPlaying() { return this.playing.size > 0; }
   settings() { return this.stream?.getAudioTracks()[0]?.getSettings(); }
-  mute(value: boolean) { this.muted = value; }
+  mute(value: boolean) {
+    this.muted = value;
+    this.stream?.getAudioTracks().forEach(track => { track.enabled = !value; });
+  }
   play(base64: string) {
     const context = this.context;
     if (!context || !this.analyser || this.disposed) return;

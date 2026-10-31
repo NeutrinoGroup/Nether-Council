@@ -18,9 +18,10 @@ pnpm install --frozen-lockfile
 pnpm dev
 pnpm check
 pnpm probe:providers
+pnpm test:e2e
 ```
 
-环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。当前入口仅为准备页，真实对话按任务闸门逐步开放。
+环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。当前 `/play` 提供中／英文孟婆语音试场：实际 AudioWorklet 采集与流式播放、插话、静音和有界重连。需要签名邀请；身份卡和其他角色尚未开放。真人与现场设备验收仍待完成。
 
 `pnpm dev` 用于界面；WS 开发使用 `pnpm dev:voice`（Vercel CLI）。正式验收仍需 HTTPS 预览及真实设备。探测命令会实际调用已配置的语音和文字接口，3D 仅查询不存在任务，不提交生成；报告不含凭据。普通 CI 不调用付费模型。
 
@@ -38,3 +39,5 @@ pnpm report:pilot
 `env:vercel` 校验本项目 ID 后从本机配置经 stdin 上传环境变量，不打印值；可追加变量名只更新所选项。默认关闭语音，开启时必须保留签名活动邀请鉴权。项目 Git 自动部署尚未接通，现由已登录的 CLI 上传。`probe:relay` 只验证自动开场的真实音频和取消链路，不能替代真人双工验收。
 
 日志采集依赖 Vercel 保留期与主动运行命令；分页边界、延迟、截断和未采集期间可能丢失事件。下载文件生成与系统分享唤起均不代表用户真的保存或分享，真实试场需观察记录。
+
+开场邀请：`pnpm invite:create --url https://nether-council.vercel.app --hours 2`，在本机 `artifacts/invites/latest.json` 读取链接。[真人语音试场手册](docs/runbooks/voice-trial.md)说明三轮中英问答、插话和声学延迟的验收方法。

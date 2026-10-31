@@ -1,3 +1,6 @@
-export default function Page() {
-  return <main><h1>黄泉议会 · Nether Council</h1><p>正在准备孟婆的第一场真实语音奇遇。 / Preparing Meng Po’s first live voice encounter.</p><p>语音入口尚未开放。 / Voice entry is not open yet.</p></main>;
+import { redirect } from "next/navigation";
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const input = await searchParams; const query = new URLSearchParams();
+  for (const key of ["invite", "ref", "lang"]) { const value = input[key]; if (typeof value === "string" && value.length <= 4096) query.set(key, value); }
+  redirect(`/play${query.size ? `?${query}` : ""}`);
 }
