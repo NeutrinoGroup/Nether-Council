@@ -19,3 +19,7 @@ Next.js 16.4.3 提示路由 preferredRegion 配置已弃用，地区改由 apps/
 实际 Qwen 回放复现：推理完成后收到 response.cancel 会返回 invalid_request_error／invalid_value，param=response.cancel，message=Conversation has no active response.。只在本连接曾发出取消且错误字段精确匹配时吸收这一竞态；其他 invalid_value 仍报错并断开。回归测试验证取消后可接收新响应，以及其他参数错误不会被吞掉。[厂商客户端事件](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/client-events)与[服务端错误](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/server-events)为协议依据。
 
 客户端携带 responseId 的取消只作用于同一活动响应；上一轮的延迟取消不应中断新一轮。服务端也验证这一点，不能只依赖客户端清理。
+
+## 可重试错误与关闭握手
+
+应用层 retryable 不能被后续正常关闭码覆盖。每条连接保留重试意图，由现有三次重连和原采集截止控制；主动结束仍不重连。单测和浏览器协议测试覆盖错误后 1000 关闭这一组合。匿名正式部署仍出现过一次上游握手超时，因此显式 IPv4 仅是已观察到有效的兼容处理，不代表已确定或消除底层网络故障。

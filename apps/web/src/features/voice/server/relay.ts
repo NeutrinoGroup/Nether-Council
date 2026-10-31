@@ -38,7 +38,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const openUpstream = (resumeTurns: { role: "user" | "assistant"; text: string }[] = []) => {
       readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 15000);
       const url = new URL(config.realtimeUrl); url.searchParams.set("model", config.realtimeModel);
-      // Explicit IPv4 avoids the deployed runtime's upstream handshake timeout; retain hostname TLS verification.
+      // Explicit IPv4 improves deployed connectivity; retain hostname TLS verification and bounded retries.
       upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 12_000, family: 4, maxPayload: 1_048_576 });
       upstream.on("unexpected-response", (_, response) => { response.resume(); diagnostic("handshake", response.statusCode); fail("UPSTREAM_UNAVAILABLE"); });
       upstream.on("error", error => { if (!closed) { diagnostic("transport", error.message === "Opening handshake has timed out" ? "HANDSHAKE_TIMEOUT" : "code" in error ? String(error.code) : undefined); fail("UPSTREAM_UNAVAILABLE"); } });
