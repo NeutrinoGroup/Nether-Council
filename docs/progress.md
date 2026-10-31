@@ -27,7 +27,7 @@
 - 连接器写项目被拒绝，本机 CLI 自有凭据成功创建并部署；Git 连接因 Vercel 对仓库权限不足未接通，当前使用本机 CLI 上传，不声称 push 自动部署。
 - 已通过 CLI 为 preview / production 配置厂商变量与独立 session、campaign、referral、host 密钥；公开变量按 Config 保存，密钥按 Secret 保存。环境是否在函数中正确生效仍由后续真实 smoke 检验。
 - [PR #7](https://github.com/NeutrinoGroup/Nether-Council/pull/7) 已通过 CI（42 秒）并合并。中继在后续 PR 集成严格消息、截止清理、上游取消和 64 KiB 输出切片。
-- `tests/integration/relay.test.ts` 使用本机测试协议端点验证桥接行为；它不是厂商或真人语音验收。完整结果与翻译尚未实现。
+- `tests/integration/relay.test.ts` 使用本机测试协议端点验证桥接行为；它不是厂商或真人语音验收。翻译在下述 T09/T10 分支实现，完整身份结果尚未实现。
 - 两个事件通过预览 `/api/events` 后收到 202，另重发一个重复 eventId。服务端日志采集 3 条，去重为 2 条，报告漏斗均为 0（仅探测事件）。日志有延迟，首次采集为 0 不算无事件；本机证据 `artifacts/g0/telemetry-probe.json`、`artifacts/telemetry/events.json`。
 - 曾成功的真实开场探针：[预览](https://nether-council-zask58bqr-oodai.vercel.app)，模型 `qwen-audio-3.1-realtime-plus`／音色 `longanqian_v3.1`，ready 2356ms、首音频 3935ms、收到 449280 字节，发送取消。取消后仍有 23 个在途分片，客户端必须按 responseId 丢弃。03:42 本地时间复测仍取得开场音频（ready 2609ms／首音频 3881ms），但取消后厂商返回 `invalid_value`，不能据此认为完整交互已通过。
 - 握手诊断：PR #9 正式部署及早期 G2 预览曾出现 `HANDSHAKE_TIMEOUT`；函数内 `VERCEL_REGION=hkg1`、DNS 成功。外层日志的 sfo1 是边缘节点，不能据此推断函数地区或声称切换香港解决。单独指定 IPv4 后，新预览连续两次取得开场音频；移除临时 DNS 诊断后，[G2 预览](https://nether-council-ca0j7wnrj-oodai.vercel.app) ready 2451ms、首音频 4019ms、518400 字节并成功取消。保留主机名与 TLS 验证，未固定 IP 或更换模型。正式部署复测结果见下。
@@ -58,3 +58,13 @@
 - 正式部署 `43287f0394b1` 的版本号已通过 smoke --revision 核对，主分支与工作区同步。匿名浏览器不带 Vercel 登录或保护绕过凭证：admission 200、24 个真实音频分片、首音频后继续上传 81 片，RMS 与嘴部联动、插话归零及结束通过。本机 `artifacts/g1-voice/browser-production-final.json`。
 - 同一部署第一次匿名试验曾遇到 `HANDSHAKE_TIMEOUT`（20:09:23 UTC）；后续无 OIDC 的 Node 探针 ready 2381ms／首音频 3386ms。**IPv4 并未根治偶发上游握手问题**，上述成功结果不代表稳定性或延迟 SLO 已达标。
 - 补充可复现恢复缺口：retryable 错误之后若关闭握手为 1000，旧客户端会结束。客户端现在保留该连接的重试意图；错误、超时和网络失败均可有界重连，主动结束与原截止时间仍优先。单测先失败后通过；本地 pnpm check（20 项 Vitest、lint、类型、资产、构建）和 10 项桌面／手机 Playwright 通过。真实超时的低层网络原因仍未确定，不擅自换模型或部署服务。
+
+## G3 T09/T10 开发（2026-11-01）
+
+- 用户确认 PR #12 已 squash 合并，main 为 `ae4ccb297168`，正式健康检查版本一致；本轮从该版本建立 `codex/encounter-captions`，提交 PR 供用户审查和合并，不自动合并或改动正式环境。
+- T09：中英语言切换、24 码点选填昵称、各三个示例、2–3 次追问后暖收尾的角色指令。确认用户故事去重计数；至少一次可主动收尾，两次或已有故事且满 75 秒提示；180 秒关闭采集。语言切换和后台关闭旧麦克风，重新开始须点击。草稿只留本页内存，明确身份／卡片尚未开放，不冒充 T11/T12。
+- T10：双方原文先显示，确认短话轮异步翻译，不等待文字模型播放音频。客户端核对八个原文身份字段；服务端取消过期工作，VAD 过滤迟到 ASR。单发言者一个任务、每连接 24 任务，每次 1800ms、最多一次重试；超长／失败保留原文并显示降级。[ADR 0003](adr/0003-encounter-and-bilingual-captions.md)列出预算与客户端草稿的信任边界。
+- `pnpm check` 全绿：lint、类型、33 项 Vitest、实际 GLB 哈希／纹理检查和 Next.js 生产构建。新增测试覆盖故事判断、75／180 秒边界、重复修订、重连与停止、字幕错配、忽略 abort 的超时、预算、响应体限制及真实本机 WS 转发。
+- `pnpm test:e2e` 桌面／手机视口 14 项通过：保留此前十项，并验证双语字幕在播放期间补齐、翻译失败保留原文、故事收尾和切换语言不自动开启新付费连接。输入是浏览器合成麦克风与应用协议夹具，不算真人／实体手机或完整 G3 验收。
+- 真实 `qwen3.6-flash` 翻译四条合成文本，中文到英文 620／682ms，英文到中文 430／638ms；4/4 首次成功。报告 `artifacts/g3-captions/text-smoke.json`。不据此宣布 P95 或语音／字幕整体 SLO 达标。
+- T11/T12、真人中英内容质量与第二台设备扫码链路仍未完成；本轮没有新增角色或生成素材。

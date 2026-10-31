@@ -1,11 +1,11 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { ServerMessage, type Session } from "@nether/contracts";
 import { relayVoice } from "../../apps/web/src/features/voice/server/relay";
 const servers: WebSocketServer[] = [];
-afterEach(async () => { for (const server of servers.splice(0)) { for (const client of server.clients) client.terminate(); await new Promise<void>(r => server.close(() => r())); } });
+afterEach(async () => { vi.unstubAllGlobals(); for (const server of servers.splice(0)) { for (const client of server.clients) client.terminate(); await new Promise<void>(r => server.close(() => r())); } });
 async function server() { const s = new WebSocketServer({ port: 0, host: "127.0.0.1" }); servers.push(s); await once(s, "listening"); return s; }
 const url = (s: WebSocketServer) => `ws://127.0.0.1:${(s.address() as AddressInfo).port}`;
 const id = "11111111-1111-4111-8111-111111111111";
@@ -60,4 +60,30 @@ test("wrong first-session ownership never opens a paid upstream", async () => {
   const closed = once(client, "close");
   client.send(JSON.stringify({ ...envelope(0), sessionId: "22222222-2222-4222-8222-222222222222", type: "session.start" }));
   await closed; expect(paidConnections).toBe(0);
+});
+test("confirmed captions translate off the audio path; cancel, VAD and close invalidate pending work", async () => {
+  const jobs: { resolve: (response: Response) => void; signal: AbortSignal }[] = [];
+  vi.stubGlobal("fetch", vi.fn((_: string, init: RequestInit) => new Promise<Response>(resolve => jobs.push({ resolve, signal: init.signal! }))));
+  const provider = await server(); const downstream = await server(); let remote: WebSocket | undefined;
+  provider.on("connection", ws => { remote = ws; ws.send(JSON.stringify({ type: "session.created" })); ws.on("message", raw => { if (JSON.parse(raw.toString()).type === "session.update") ws.send(JSON.stringify({ type: "session.updated" })); }); });
+  downstream.on("connection", ws => { void relayVoice(ws, session(), { realtimeKey: "fixture", realtimeUrl: url(provider), realtimeModel: "fixture", text: { key: "fixture", baseUrl: "https://text.example", model: "fixture" } }); });
+  const client = new WebSocket(url(downstream)); const received: ReturnType<typeof ServerMessage.parse>[] = [];
+  client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(raw.toString())))); await once(client, "open");
+  client.send(JSON.stringify({ ...envelope(0), type: "session.start" })); await waitFor(() => received.some(e => e.type === "session.ready"));
+  const emit = (event: object) => remote!.send(JSON.stringify(event));
+  const respond = (id: string) => { emit({ type: "response.created", response: { id } }); emit({ type: "response.audio.delta", response_id: id, delta: "AAA=" }); emit({ type: "response.audio_transcript.delta", response_id: id, delta: "Tell me about the meeting." }); emit({ type: "response.done", response: { id, status: "completed" } }); };
+  const resolve = (i: number) => jobs[i].resolve(new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: '{"translation":"说说那场会。"}' } }] })));
+  respond("a"); await waitFor(() => jobs.length === 1 && received.some(e => e.type === "response.done"));
+  expect(received.some(e => e.type === "audio.delta")).toBe(true); expect(received.some(e => e.type === "caption.translation")).toBe(false);
+  // Generation already ended; cancelling its still-audible playback must also cancel translation.
+  client.send(JSON.stringify({ ...envelope(1), type: "response.cancel", responseId: "a" })); await waitFor(() => jobs[0].signal.aborted); resolve(0);
+  respond("b"); await waitFor(() => jobs.length === 2);
+  emit({ type: "input_audio_buffer.speech_started", item_id: "u2" }); await waitFor(() => jobs[1].signal.aborted);
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u1", transcript: "A late old story." });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u2", transcript: "The meeting was at midnight." });
+  await waitFor(() => jobs.length === 3); expect(received.filter(e => e.type === "caption" && e.caption.speaker === "user")).toHaveLength(1);
+  respond("c"); await waitFor(() => jobs.length === 4 && received.some(e => e.type === "audio.delta" && e.responseId === "c"));
+  resolve(2); await waitFor(() => received.some(e => e.type === "caption.translation"));
+  expect(received.filter(e => e.type === "caption.translation")).toMatchObject([{ translation: { responseId: "u2", status: "ready" } }]);
+  client.close(); await waitFor(() => jobs[3].signal.aborted); resolve(1); resolve(3);
 });

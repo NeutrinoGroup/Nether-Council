@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 const audio = vi.hoisted(() => ({ clear: vi.fn(), stop: vi.fn(), play: vi.fn(), mute: vi.fn(), start: vi.fn(async () => {}), rms: vi.fn(() => 0), isPlaying: vi.fn(() => false) }));
 vi.mock("../../apps/web/src/features/voice/audio/engine", () => ({ AudioEngine: class { start = audio.start; clear = audio.clear; stop = audio.stop; play = audio.play; mute = audio.mute; rms = audio.rms; isPlaying = audio.isPlaying; } }));
 import { VoiceClient, type VoiceView } from "../../apps/web/src/features/voice/client";
+import type { Caption } from "@nether/contracts";
 class Socket {
   static OPEN = 1; static instances: Socket[] = [];
   readyState = 1; bufferedAmount = 0; sent: Record<string, unknown>[] = [];
@@ -58,4 +59,45 @@ test("retryable provider errors reconnect even when the close handshake looks no
   await vi.advanceTimersByTimeAsync(1500);
   expect(Socket.instances).toHaveLength(2);
   expect(view).toMatchObject({ phase: "reconnecting", reconnects: 1, session: { expiresAt: session.expiresAt } });
+});
+test("story progress survives reconnect without resetting 75-second prompt or three-minute stop", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; });
+  await current.start("en", "fixture", undefined, "  Pumpkin\u0000  ");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (payload: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...payload }) });
+  const caption: Caption = { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "I had five meetings and did no work.", speaker: "user", final: true };
+  send({ type: "caption", caption }); send({ type: "caption", caption });
+  expect(view).toMatchObject({ userTurns: 1, canClaim: true, claimReady: false });
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).not.toHaveProperty("nickname");
+  socket.onclose?.({ code: 1011 }); await vi.advanceTimersByTimeAsync(1500);
+  const next = Socket.instances[1]; next.onopen?.(); expect(next.sent[0]).toMatchObject({ resumeTurns: [{ role: "user", text: caption.sourceText }] });
+  await vi.advanceTimersByTimeAsync(73_500); expect(view?.claimReady).toBe(true);
+  await vi.advanceTimersByTimeAsync(105_000);
+  expect(view).toMatchObject({ phase: "ended", endReason: "time_limit", draft: { nickname: "Pumpkin", sessionId: id, turns: [{ text: caption.sourceText }] } });
+  expect(audio.stop).toHaveBeenCalled();
+});
+test("translations cannot revive old responses or cross a stop or connection epoch", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (payload: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...payload }) });
+  const caption: Caption = { sessionId: id, epoch: 0, responseId: "a", segmentId: "a", revision: 1, sourceLocale: "en", sourceText: "Which meeting could have been soup?", speaker: "character", final: true };
+  send({ type: "response.started", responseId: "a" }); send({ type: "caption", caption });
+  send({ type: "caption.translation", translation: { ...caption, status: "ready", translatedText: "哪场会可以换成喝汤？" } });
+  expect(view?.caption?.translatedText).toBe("哪场会可以换成喝汤？");
+  send({ type: "response.started", responseId: "b" });
+  send({ type: "caption.translation", translation: { ...caption, status: "ready", translatedText: "stale" } }); expect(view?.caption).toBeUndefined();
+  send({ type: "caption", caption }); expect(view?.caption).toBeUndefined();
+  const currentCaption = { ...caption, responseId: "b", segmentId: "b" }; send({ type: "caption", caption: currentCaption });
+  current.interrupt(); send({ type: "caption.translation", translation: { ...currentCaption, status: "ready", translatedText: "cancelled" } }); expect(view?.caption).toBeUndefined();
+  socket.onclose?.({ code: 1011 }); await vi.advanceTimersByTimeAsync(1500);
+  send({ type: "caption", caption: { ...caption, speaker: "user" } }); expect(view?.userCaption).toBeUndefined();
+  current.stop("language_change"); send({ type: "audio.delta", responseId: "c", audio: "AAA=" });
+  expect(view).toMatchObject({ phase: "ended", endReason: "language_change" }); expect(audio.play).not.toHaveBeenCalled();
+});
+test("finish cannot fabricate a story and a valid finish releases microphone immediately", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  current.finish(); expect(audio.stop).not.toHaveBeenCalled();
+  const socket = Socket.instances[0];
+  socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss scheduled a midnight meeting.", speaker: "user", final: true } }) });
+  current.finish(); expect(view).toMatchObject({ phase: "ended", endReason: "claim", draft: { turns: [{ speaker: "user" }] } }); expect(audio.stop).toHaveBeenCalledOnce();
 });

@@ -1,8 +1,8 @@
-import { ServerMessage, Session, type Caption, type Locale } from "@nether/contracts";
-import { RECONNECT_DELAYS_MS } from "@nether/party-core";
+import { ServerMessage, Session, EncounterDraft, type ConfirmedTurn, type Locale } from "@nether/contracts";
+import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
 import { AudioEngine } from "./audio/engine";
-export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: Caption; userCaption?: Caption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number };
-export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false };
+export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "error" };
+export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
   private audio = new AudioEngine();
   private socket?: WebSocket;
@@ -17,13 +17,15 @@ export class VoiceClient {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private deadlineTimer?: ReturnType<typeof setTimeout>;
   private connectionTimer?: ReturnType<typeof setTimeout>;
-  private history: { role: "user" | "assistant"; text: string }[] = [];
-  private confirmedSegments = new Set<string>();
+  private turns: ConfirmedTurn[] = [];
+  private nickname = "";
+  private progressTimer?: ReturnType<typeof setInterval>;
   private startedAt = 0;
   private view: VoiceView = idleView;
   constructor(private notify: (view: VoiceView) => void) {}
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
-  async start(locale: Locale, invite: string, ref?: string) {
+  async start(locale: Locale, invite: string, ref?: string, nickname = "") {
+    this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now(); this.update({ phase: "permission" });
     try {
       await this.audio.start(audio => {
@@ -40,7 +42,8 @@ export class VoiceClient {
       const session = Session.parse(body.session);
       if (this.disposed) return;
       this.update({ session });
-      this.deadlineTimer = setTimeout(() => this.stop(), Math.max(0, session.captureUntil - Date.now()));
+      this.progressTimer = setInterval(() => this.refreshProgress(), 1000);
+      this.deadlineTimer = setTimeout(() => this.stop("time_limit"), Math.max(0, session.captureUntil - Date.now()));
       this.connect();
     } catch (error) {
       if (this.disposed) return;
@@ -57,7 +60,10 @@ export class VoiceClient {
     const current = () => !this.disposed && socket === this.socket && epoch === this.epoch;
     let retryRequested = false;
     this.connectionTimer = setTimeout(() => { if (current()) { retryRequested = true; socket.close(); } }, 20000);
-    socket.onopen = () => { if (current()) this.send({ type: "session.start", ...(this.history.length ? { resumeTurns: this.history } : {}) }); };
+    socket.onopen = () => {
+      const history = this.turns.slice(-4).map(t => ({ role: t.speaker === "user" ? "user" as const : "assistant" as const, text: t.text }));
+      if (current()) this.send({ type: "session.start", ...(history.length ? { resumeTurns: history } : {}) });
+    };
     socket.onmessage = ({ data }) => {
       if (!current()) return;
       let event;
@@ -70,7 +76,9 @@ export class VoiceClient {
         this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
         this.telemetry("conversation_started");
       } else if (event.type === "speech.started") {
-        this.interrupt(); this.update({ phase: "listening" });
+        this.interrupt(); this.update({ phase: "listening", userCaption: undefined });
+      } else if (event.type === "response.started") {
+        this.activeResponse = event.responseId; this.update({ caption: undefined });
       } else if (event.type === "audio.delta") {
         if (this.canceled.has(event.responseId)) return;
         this.activeResponse = event.responseId;
@@ -79,13 +87,18 @@ export class VoiceClient {
       } else if (event.type === "caption") {
         const caption = event.caption;
         if (caption.sessionId !== session.id || caption.epoch !== epoch || this.canceled.has(caption.responseId)) return;
+        if (caption.speaker === "character" && this.activeResponse && caption.responseId !== this.activeResponse) return;
         const previous = caption.speaker === "user" ? this.view.userCaption : this.view.caption;
         if (previous?.segmentId === caption.segmentId && previous.revision >= caption.revision) return;
-        if (caption.final && !this.confirmedSegments.has(caption.segmentId)) {
-          this.confirmedSegments.add(caption.segmentId);
-          this.history.push({ role: caption.speaker === "user" ? "user" : "assistant", text: caption.sourceText.slice(0, 600) }); this.history = this.history.slice(-4);
-        }
-        this.update(caption.speaker === "user" ? { userCaption: caption } : { caption });
+        this.turns = recordTurn(this.turns, caption);
+        const display = { ...caption, translationStatus: caption.final ? "pending" as const : undefined };
+        this.update(caption.speaker === "user" ? { userCaption: display } : { caption: display });
+        this.refreshProgress();
+      } else if (event.type === "caption.translation") {
+        const translation = event.translation;
+        if (this.canceled.has(translation.responseId)) return;
+        if (translation.speaker === "user") this.update({ userCaption: applyTranslation(this.view.userCaption, translation) });
+        else this.update({ caption: applyTranslation(this.view.caption, translation) });
       } else if (event.type === "error") {
         if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
       }
@@ -95,8 +108,8 @@ export class VoiceClient {
     socket.onclose = ({ code }) => {
       if (!current()) return;
       clearTimeout(this.connectionTimer); this.ready = false; this.audio.clear(); this.activeResponse = undefined;
-      this.update({ caption: undefined });
-      if ((code === 1000 && !retryRequested) || Date.now() >= session.captureUntil) return this.stop();
+      this.update({ caption: undefined, userCaption: undefined });
+      if ((code === 1000 && !retryRequested) || Date.now() >= session.captureUntil) return this.stop(Date.now() >= session.captureUntil ? "time_limit" : "user");
       if (this.view.reconnects >= RECONNECT_DELAYS_MS.length) return this.fail("RECONNECT_EXHAUSTED");
       const delay = RECONNECT_DELAYS_MS[this.view.reconnects] + Math.random() * 250;
       this.epoch++; this.canceled.clear();
@@ -124,12 +137,22 @@ export class VoiceClient {
     const session = this.view.session;
     if (session) void fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: crypto.randomUUID(), sessionId: session.id, name, at: Date.now() }), keepalive: true }).catch(() => {});
   }
-  private fail(error: string) { this.stop(); this.update({ phase: "error", error }); }
-  stop() {
+  private refreshProgress() {
+    const elapsed = Math.max(0, Date.now() - (this.view.session?.createdAt ?? Date.now()));
+    this.update({ ...encounterProgress(this.turns, elapsed), elapsedSeconds: Math.floor(elapsed / 1000) });
+  }
+  finish() { if (this.view.canClaim) this.stop("claim"); }
+  private fail(error: string) { this.stop("error"); this.update({ phase: "error", error }); }
+  stop(reason: NonNullable<VoiceView["endReason"]> = "user") {
     if (this.disposed) return;
+    let draft: EncounterDraft | undefined;
+    const session = this.view.session;
+    if (session && encounterProgress(this.turns, 0).canClaim && ["claim", "user", "time_limit"].includes(reason)) {
+      draft = EncounterDraft.parse({ sessionId: session.id, characterId: session.characterId, locale: session.locale, nickname: this.nickname, createdAt: session.createdAt, endedAt: Date.now(), turns: this.turns.map(t => ({ ...t })) });
+    }
     this.send({ type: "session.end" }); this.disposed = true; this.ready = false;
-    this.abort.abort(); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.connectionTimer);
+    this.abort.abort(); clearInterval(this.progressTimer); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.connectionTimer);
     this.socket?.close(); this.audio.stop();
-    this.update({ phase: "ended", caption: undefined });
+    this.update({ phase: "ended", caption: undefined, userCaption: undefined, draft, endReason: reason });
   }
 }

@@ -1,4 +1,5 @@
 import type { Caption, IdentityResult, Session } from "@nether/contracts";
+export { applyTranslation, encounterProgress, isStoryText, normalizeNickname, recordTurn, CLAIM_PROMPT_MS, type DisplayCaption } from "./encounter";
 export const CAPTURE_LIMIT_MS = 180_000;
 export const FINALIZE_LIMIT_MS = 30_000;
 export const CONNECTION_LIMIT_MS = 235_000;
