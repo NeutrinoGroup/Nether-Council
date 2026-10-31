@@ -33,3 +33,9 @@
 .secondary-action-btn{background:transparent;border:1px solid var(--ink);color:var(--ink);font-weight:600;min-height:46px}
 .secondary-action-btn:hover{background:var(--paper)}
 @media(max-width:900px){.identity-card-section{grid-template-columns:1fr;gap:24px}.card-preview-container{max-width:380px;margin:0 auto}}
+
+.character-picker{margin-top:20px}
+.character-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:8px}
+.character-chip{padding:8px 10px;font-size:13px;font-weight:600;min-height:40px;border-radius:10px;border:1px solid var(--ink);background:transparent;text-align:center;transition:all .15s ease}
+.character-chip:hover:not(:disabled){background:var(--paper);color:var(--ink)}
+.character-chip.selected{background:var(--ink);color:var(--paper);border-color:var(--ink)}

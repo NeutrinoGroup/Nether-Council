@@ -81,3 +81,30 @@
   - `pnpm test:e2e`：全部 16 项 Playwright 跨视口端到端测试通过（涵盖桌面与移动端的身份卡生成、隐去评价、修改昵称、PNG 下载与文案复制）。
   - 视觉产物捕获至 `.impeccable/review/desktop-verdict-card.png` 与 `mobile-verdict-card.png`。
 
+
+## G4 T13/T14 七角色扩展、官方音色映射与切换巡检（2026-11-01）
+
+- PR #14（`893b867`）已 squash 合并并成功上线 Vercel 正式环境（`https://nether-council.vercel.app`），`smoke --revision` 核验 100% 通过；实机成功调用正式 `qwen3.6-flash` 生产身份卡与 7 天 HMAC 推荐链接。
+- 从 main 创建分支 `feat/seven-characters-roster` 推进 T13 与 T14。
+- T13 七角色定义与资源：
+  - 在 `@nether/party-core` 建立统一的角色定义注册表（`CHARACTERS`），全面覆盖孟婆、黑无常、白无常、钟馗、弗兰肯斯坦怪人、狼人、吸血鬼 7 位角色。
+  - 通过与 Qwen 实时音频 WebSocket 端点逐一真实握手探测，锁定并验证了全部 7 位角色的专属官方音色：
+    - 孟婆：`longanqian_v3.1`
+    - 黑无常：`longyuan_v3.1`
+    - 白无常：`longxiaoxia_v3.1`
+    - 钟馗：`longhua_v3.1`
+    - 弗兰肯斯坦怪人：`longjielidou_v3.1`
+    - 狼人：`longxing_v3.1`
+    - 吸血鬼：`longwan_v3.1`
+  - 为 6 位新角色生成了独立的 512×512 风格化海报资源（`apps/web/public/posters/*.png`），并在 `canvas.ts` 中配置了高对比度、不同色系（青色、赤红、朱砂、荧光绿、紫橙、酒红）的 1080×1440 身份卡专属主题（`CardTheme`）。
+  - `CharacterStage` 遵循“只在选中后加载模型”规范：选中孟婆时加载 GLB 3D 模型；选中其他角色时优雅降级并展示专属形象海报，不发起不存在的 3D 模型网络请求。
+- T14 角色切换与防串线验证：
+  - `/api/sessions` 解除单角色限制，开放全部 7 位角色签名入场。
+  - 客户端支持在开聊前自由切换角色，切换时调用 `client.stop("character_change")` 彻底重置语音引擎与会话视图，防止旧会话与异步翻译串线。
+  - 编写了 42 组跨角色跨语言的内容评估测试用例（7 角色 × 2 语言 × 3 话轮场景），校验提示词防幻觉约束、不侮辱用户原则及有效故事识别。
+- 质量验证：
+  - `pnpm lint`：0 错误，0 警告。
+  - `pnpm typecheck`：4 个 workspace 全部 100% 通过。
+  - `pnpm test`：全部 13 个测试套件、46 项 Vitest 单元与集成测试全绿。
+  - `pnpm test:e2e`：全部 18 项 Playwright 跨视口端到端测试全绿。
+  - `pnpm check`：lint、类型、测试、资产哈希、生产 Next.js 优化构建全部通过。

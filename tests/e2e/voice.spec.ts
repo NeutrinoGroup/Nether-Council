@@ -167,4 +167,18 @@ test("language switch ends the current conversation and waits for a fresh start 
   const examples = page.locator(infoMobile(page) ? ".mobile-opening-lines li" : ".story-examples li"); expect(await examples.count()).toBe(3);
 });
 
+test("switching character updates character heading, starters, and button cleanly", async ({ page }) => {
+  await page.goto("/play?invite=test-fixture&lang=zh");
+  await expect(page.getByRole("heading", { name: "孟婆", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开麦，找孟婆聊聊" })).toBeEnabled();
+
+  await page.getByRole("radio", { name: "黑无常" }).click();
+  await expect(page.getByRole("heading", { name: "黑无常", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开麦，找黑无常聊聊" })).toBeEnabled();
+
+  await page.getByRole("radio", { name: "怪人弗兰肯斯坦" }).click();
+  await expect(page.getByRole("heading", { name: "怪人弗兰肯斯坦", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开麦，找怪人弗兰肯斯坦聊聊" })).toBeEnabled();
+});
+
 function infoMobile(page: import("@playwright/test").Page) { return (page.viewportSize()?.width ?? 1440) <= 640; }

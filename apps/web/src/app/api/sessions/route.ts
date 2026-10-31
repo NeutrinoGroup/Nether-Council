@@ -1,10 +1,10 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { Locale } from "@nether/contracts";
+import { CharacterId, Locale } from "@nether/contracts";
 import { serverConfig } from "@/shared/server/config";
 import { CampaignClaims, ReferralClaims, sameOrigin, signTicket, verifyTicket } from "@/shared/server/tickets";
 export const runtime = "nodejs";
-const Input = z.strictObject({ locale: Locale, characterId: z.literal("meng-po"), mode: z.enum(["personal", "host"]).default("personal"), invite: z.string().max(4096), ref: z.string().max(4096).optional(), hostCredential: z.string().max(256).optional() });
+const Input = z.strictObject({ locale: Locale, characterId: CharacterId.default("meng-po"), mode: z.enum(["personal", "host"]).default("personal"), invite: z.string().max(4096), ref: z.string().max(4096).optional(), hostCredential: z.string().max(256).optional() });
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   if (Number(request.headers.get("content-length") ?? 0) > 10000) return new Response(null, { status: 413 });

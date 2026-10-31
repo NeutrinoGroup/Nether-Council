@@ -6,6 +6,7 @@ export const CharacterId = z.enum(["hei-wuchang", "bai-wuchang", "zhong-kui", "m
 export type Locale = z.infer<typeof Locale>;
 export type CharacterId = z.infer<typeof CharacterId>;
 export const Localized = z.strictObject({ zh: z.string().min(1), en: z.string().min(1) });
+export type Localized = z.infer<typeof Localized>;
 const Id = z.uuid();
 export const Session = z.strictObject({
   id: Id, characterId: CharacterId, locale: Locale, mode: z.enum(["personal", "host"]),

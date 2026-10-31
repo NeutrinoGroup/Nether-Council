@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import type { IdentityResult, Locale } from "@nether/contracts";
+import { getCharacter } from "@nether/party-core";
 
 export interface CardRenderOptions {
   result: IdentityResult;
@@ -11,7 +12,6 @@ export interface CardRenderOptions {
 
 function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
-  // Support both CJK characters and space-separated Latin words
   const tokens = Array.from(text);
   let currentLine = "";
 
@@ -55,6 +55,9 @@ export async function renderCardToCanvas(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("CANVAS_CONTEXT_UNAVAILABLE");
 
+  const meta = getCharacter(result.characterId);
+  const theme = meta.cardTheme;
+
   // Ensure fonts are ready before drawing
   if (typeof document !== "undefined" && document.fonts) {
     try {
@@ -64,25 +67,25 @@ export async function renderCardToCanvas(
 
   // 1. Background gradient
   const bg = ctx.createLinearGradient(0, 0, 0, height);
-  bg.addColorStop(0, "#160d13");
-  bg.addColorStop(0.4, "#0f090d");
+  bg.addColorStop(0, theme.bgGradient[0]);
+  bg.addColorStop(0.5, theme.bgGradient[1]);
   bg.addColorStop(1, "#070406");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
   // 2. Subtle radial glow behind the title
   const glow = ctx.createRadialGradient(width / 2, 450, 40, width / 2, 450, 480);
-  glow.addColorStop(0, "rgba(255, 106, 39, 0.18)");
-  glow.addColorStop(1, "rgba(255, 106, 39, 0)");
+  glow.addColorStop(0, theme.glow);
+  glow.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, width, height);
 
   // 3. Borders & Frames
-  ctx.strokeStyle = "#38232c";
+  ctx.strokeStyle = "#2f2228";
   ctx.lineWidth = 4;
   ctx.strokeRect(36, 36, width - 72, height - 72);
 
-  ctx.strokeStyle = "#ff6a27";
+  ctx.strokeStyle = theme.border;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(46, 46, width - 92, height - 92);
 
@@ -93,7 +96,7 @@ export async function renderCardToCanvas(
     [52, height - 52],
     [width - 52, height - 52],
   ];
-  ctx.fillStyle = "#ff6a27";
+  ctx.fillStyle = theme.accent;
   for (const [cx, cy] of corners) {
     ctx.beginPath();
     ctx.arc(cx, cy, 4, 0, Math.PI * 2);
@@ -106,7 +109,7 @@ export async function renderCardToCanvas(
   ctx.font = "600 22px system-ui, -apple-system, sans-serif";
   ctx.fillText("NETHER COUNCIL · 黄泉议会", width / 2, 110);
 
-  ctx.fillStyle = "#6b545d";
+  ctx.fillStyle = "#7b6871";
   ctx.font = "500 16px system-ui, -apple-system, sans-serif";
   ctx.fillText("AFTERLIFE HALLOWEEN ENCOUNTER · 2026", width / 2, 140);
 
@@ -119,14 +122,14 @@ export async function renderCardToCanvas(
   ctx.stroke();
 
   // 5. Character badge
-  ctx.fillStyle = "#ff6a27";
+  ctx.fillStyle = theme.accent;
   ctx.font = "650 26px system-ui, -apple-system, sans-serif";
-  ctx.fillText("✦ 孟婆 · MENG PO ✦", width / 2, 215);
+  ctx.fillText(`✦ ${meta.name.zh} · ${meta.name.en.toUpperCase()} ✦`, width / 2, 215);
 
-  ctx.fillStyle = "#9c828d";
+  ctx.fillStyle = "#a8909b";
   ctx.font = "18px system-ui, -apple-system, sans-serif";
   ctx.fillText(
-    locale === "zh" ? "忘忧酒保亲授专属身份" : "Title conferred by the Afterlife Bartender",
+    meta.role[locale],
     width / 2,
     245
   );
@@ -140,11 +143,11 @@ export async function renderCardToCanvas(
   // 7. Identity Title (Hero display)
   const titleText = result.title[locale];
   const subTitleText = result.title[locale === "zh" ? "en" : "zh"];
-  ctx.fillStyle = "#ff6a27";
+  ctx.fillStyle = theme.accent;
   ctx.font = locale === "zh" ? "800 64px 'Ma Shan Zheng', cursive, system-ui" : "800 52px 'Bungee', cursive, system-ui";
   ctx.fillText(titleText, width / 2, 410);
 
-  ctx.fillStyle = "#ffaa6e";
+  ctx.fillStyle = theme.badgeColor;
   ctx.font = "500 24px system-ui, -apple-system, sans-serif";
   ctx.fillText(subTitleText, width / 2, 455);
 
@@ -157,8 +160,8 @@ export async function renderCardToCanvas(
   const tagY = 495;
 
   for (const tag of tagList) {
-    ctx.fillStyle = "#27151e";
-    ctx.strokeStyle = "#4d2938";
+    ctx.fillStyle = theme.badgeBg;
+    ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.roundRect(startX, tagY, tagWidth, 42, 21);
@@ -176,7 +179,7 @@ export async function renderCardToCanvas(
   const verdictBoxWidth = width - 180;
   const verdictBoxX = 90;
 
-  ctx.fillStyle = "#160c12";
+  ctx.fillStyle = "#120910";
   ctx.strokeStyle = "#38232c";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -187,9 +190,13 @@ export async function renderCardToCanvas(
   // Verdict content
   ctx.textAlign = "center";
   if (!hideVerdict) {
-    ctx.fillStyle = "#ff6a27";
+    ctx.fillStyle = theme.accent;
     ctx.font = "600 18px system-ui, -apple-system, sans-serif";
-    ctx.fillText(locale === "zh" ? "— 孟婆批注 —" : "— Meng Po's Observation —", width / 2, verdictBoxY + 45);
+    ctx.fillText(
+      locale === "zh" ? `— ${meta.name.zh} 批注 —` : `— ${meta.name.en}'s Observation —`,
+      width / 2,
+      verdictBoxY + 45
+    );
 
     ctx.fillStyle = "#f8f3ea";
     ctx.font = "400 24px system-ui, -apple-system, sans-serif";
@@ -211,7 +218,7 @@ export async function renderCardToCanvas(
 
   // 10. Warm Closing Speech
   const closingY = 875;
-  ctx.fillStyle = "#ffaa6e";
+  ctx.fillStyle = theme.badgeColor;
   ctx.font = "italic 24px system-ui, -apple-system, sans-serif";
   const closingLines = wrapLines(ctx, `“${result.warmClosing[locale]}”`, width - 240);
   let closeLineY = closingY;
@@ -220,64 +227,90 @@ export async function renderCardToCanvas(
     closeLineY += 34;
   }
 
-  // 11. Bottom Card with QR Code and share invitation
-  const bottomCardY = 990;
-  const bottomCardHeight = 340;
-  ctx.fillStyle = "#f8f3ea";
+  // 11. Footer Divider
+  ctx.strokeStyle = "#38232c";
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(110, bottomCardY, width - 220, bottomCardHeight, 20);
-  ctx.fill();
+  ctx.moveTo(90, 1010);
+  ctx.lineTo(width - 90, 1010);
+  ctx.stroke();
 
-  // Draw QR code inside bottom card
-  const qrDataUrl = await generateQrDataUrl(shareUrl);
-  const qrImg = new Image();
-  qrImg.src = qrDataUrl;
-  await new Promise<void>((resolve, reject) => {
-    qrImg.onload = () => resolve();
-    qrImg.onerror = reject;
-  });
+  // 12. QR Code & Referral Block
+  const qrX = 140;
+  const qrY = 1055;
+  const qrSize = 250;
 
-  const qrSize = 220;
-  const qrX = 160;
-  const qrY = bottomCardY + (bottomCardHeight - qrSize) / 2;
-  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+  try {
+    const qrDataUrl = await generateQrDataUrl(shareUrl || "https://nether-council.vercel.app");
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = reject;
+      img.src = qrDataUrl;
+    });
 
-  // Text next to QR code
+    // White quiet-zone container for QR code
+    ctx.fillStyle = "#f8f3ea";
+    ctx.fillRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24);
+    ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
+  } catch {
+    ctx.fillStyle = "#26131c";
+    ctx.fillRect(qrX, qrY, qrSize, qrSize);
+    ctx.fillStyle = "#b5a4ab";
+    ctx.font = "16px system-ui";
+    ctx.fillText(locale === "zh" ? "二维码生成中" : "QR loading", qrX + qrSize / 2, qrY + qrSize / 2);
+  }
+
+  // Right side of QR code: explanation & call to action
+  const infoX = 450;
   ctx.textAlign = "left";
-  const textLeft = qrX + qrSize + 40;
-  ctx.fillStyle = "#0a0709";
-  ctx.font = "750 30px system-ui, -apple-system, sans-serif";
-  ctx.fillText(locale === "zh" ? "扫码开启黄泉奇遇" : "Scan to Enter Party", textLeft, bottomCardY + 110);
 
-  ctx.fillStyle = "#5c4951";
-  ctx.font = "500 20px system-ui, -apple-system, sans-serif";
-  ctx.fillText(
-    locale === "zh" ? "讲一件离谱事 · 测你的专属身份" : "Tell a story · Claim your afterlife title",
-    textLeft,
-    bottomCardY + 155
-  );
+  ctx.fillStyle = theme.accent;
+  ctx.font = "700 26px system-ui, -apple-system, sans-serif";
+  ctx.fillText(locale === "zh" ? "扫码领取你的冥界身份" : "Scan to Claim Your Afterlife Identity", infoX, 1105);
 
-  ctx.fillStyle = "#ff6a27";
-  ctx.font = "650 18px system-ui, -apple-system, sans-serif";
-  ctx.fillText("ghost.oodai.space", textLeft, bottomCardY + 205);
+  ctx.fillStyle = "#e2d7dc";
+  ctx.font = "400 20px system-ui, -apple-system, sans-serif";
+  const descLines = locale === "zh"
+    ? [
+        "黄泉议会万圣节限时奇遇",
+        "与冥界神怪全双工实时语音对话",
+        "领取属于你的专属身份与暖心批注",
+      ]
+    : [
+        "Nether Council Halloween Special",
+        "Duplex voice encounter with afterlife deities",
+        "Discover your custom title & warm verdict",
+      ];
 
-  ctx.fillStyle = "#8a757e";
-  ctx.font = "400 15px system-ui, -apple-system, sans-serif";
-  ctx.fillText(locale === "zh" ? "凭此卡扫码免手填入场码" : "Direct access without code", textLeft, bottomCardY + 240);
+  let descY = 1150;
+  for (const line of descLines) {
+    ctx.fillText(line, infoX, descY);
+    descY += 32;
+  }
 
-  // 12. Footnote / watermark
+  ctx.fillStyle = "#755d66";
+  ctx.font = "500 15px system-ui, -apple-system, sans-serif";
+  ctx.fillText("nether-council.vercel.app · 7 DAYS VALID INVITE", infoX, 1270);
+
+  // Bottom footer disclaimer
   ctx.textAlign = "center";
-  ctx.fillStyle = "#59424b";
+  ctx.fillStyle = "#614e56";
   ctx.font = "14px system-ui, -apple-system, sans-serif";
-  const dateStr = new Date(result.generatedAt).toISOString().slice(0, 10);
-  ctx.fillText(`SESSION ${result.sessionId.slice(0, 8)} · ${dateStr} · NETHER COUNCIL`, width / 2, height - 20);
+  ctx.fillText(
+    locale === "zh"
+      ? "本卡片由全双工语音实时生成 · 故事细节仅保留在本地 · 祝你万圣狂欢夜安"
+      : "Generated live via duplex voice · Story details kept private · Happy Halloween",
+    width / 2,
+    1390
+  );
 }
 
-export async function exportCardPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+export function exportCardPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       if (blob) resolve(blob);
-      else reject(new Error("CANVAS_TO_BLOB_FAILED"));
+      else reject(new Error("CANVAS_BLOB_EXPORT_FAILED"));
     }, "image/png");
   });
 }
