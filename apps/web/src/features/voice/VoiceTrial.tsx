@@ -6,6 +6,7 @@ import { VoiceClient, idleView, type VoiceView } from "./client";
 import { CharacterStage } from "../world3d/CharacterStage";
 import { BilingualCaption } from "../captions/BilingualCaption";
 import { IdentityCard } from "../card/IdentityCard";
+import { InAppBrowserBanner } from "./InAppBrowserBanner";
 import { errorText, words } from "./words";
 
 let clientHydrated = false;
@@ -272,6 +273,7 @@ export function VoiceTrial({
         </section>
 
         <aside className="voice-setup" aria-label={locale === "zh" ? "开聊准备" : "Before you talk"}>
+          <InAppBrowserBanner locale={locale} />
           <p className="encounter-intro">{t.invitation}</p>
 
           <fieldset disabled={active} className="character-picker">
