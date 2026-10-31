@@ -1,0 +1,10 @@
+.env
+.env.*
+**/.env
+**/.env.*
+artifacts
+.impeccable
+.git
+node_modules
+**/node_modules
+**/.next

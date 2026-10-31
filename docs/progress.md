@@ -17,3 +17,11 @@
 
 - [PR #6](https://github.com/NeutrinoGroup/Nether-Council/pull/6)：工程、CI、健康检查与厂商探测，已合并；GitHub Actions 通过（48 秒）。
 - 会话协议 PR：增加严格 schema、签名票据、纯状态机与事件隔离测试。`pnpm check` 本机通过；待 PR CI 与中继集成后继续核验 T04。
+
+## 部署与运行时配置
+
+- Vercel 项目：`oodai/nether-council`，Node 24、Next.js、`apps/web`、Fluid Compute、默认 300 秒函数时限。首个部署自动成为 production，准备页 [nether-council.vercel.app](https://nether-council.vercel.app) 健康检查通过。
+- 连接器写项目被拒绝，本机 CLI 自有凭据成功创建并部署；Git 连接因 Vercel 对仓库权限不足未接通，当前使用本机 CLI 上传，不声称 push 自动部署。
+- 已通过 CLI 为 preview / production 配置厂商变量与独立 session、campaign、referral、host 密钥；公开变量按 Config 保存，密钥按 Secret 保存。环境是否在函数中正确生效仍由后续真实 smoke 检验。
+- [PR #7](https://github.com/NeutrinoGroup/Nether-Council/pull/7) 已通过 CI（42 秒）并合并。中继在后续 PR 集成严格消息、截止清理、上游取消和 64 KiB 输出切片。
+- `tests/integration/relay.test.ts` 使用本机测试协议端点验证桥接行为；它不是厂商或真人语音验收。语音入口仍是准备页，完整结束、结果与翻译尚未实现。
