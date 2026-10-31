@@ -8,7 +8,7 @@ loadLocalEnv();
 const flag = process.argv.indexOf("--url"); const base = process.argv[flag + 1];
 if (flag < 0 || !base?.startsWith("https://")) throw new Error("Provide --url https://<preview>");
 const target = new URL(base);
-if (!(target.hostname.startsWith("nether-council-") && target.hostname.endsWith("-oodai.vercel.app"))) throw new Error("Use this project’s preview hostname");
+if (!(target.hostname === "nether-council.vercel.app" || (target.hostname.startsWith("nether-council-") && target.hostname.endsWith("-oodai.vercel.app")))) throw new Error("Use this project’s production or preview hostname");
 const trustedHeaders: Record<string, string> = process.env.VERCEL_OIDC_TOKEN ? { "x-vercel-trusted-oidc-idp-token": process.env.VERCEL_OIDC_TOKEN } : {};
 const origin = target.origin; const now = Date.now();
 const invite = signTicket({ kind: "campaign", campaignId: process.env.NEXT_PUBLIC_CAMPAIGN_ID ?? "halloween-2026", issuedAt: now, expiresAt: now + 600000 }, process.env.CAMPAIGN_SIGNING_SECRET ?? "");
@@ -20,6 +20,7 @@ if (!cookie) throw new Error("Missing session cookie");
 const start = performance.now();
 const ws = new WebSocket(`${origin.replace("https:", "wss:")}/api/ws`, { headers: { ...trustedHeaders, Origin: origin, Cookie: cookie } });
 const metrics = { at: new Date().toISOString(), sessionId: session.id, model: process.env.QWEN_REALTIME_MODEL ?? "qwen-audio-3.1-realtime-plus", readyMs: -1, firstAudioMs: -1, audioBytes: 0, cancelSent: false, postCancelAudioChunks: 0, status: "pending", url: origin, kind: "automated_provider_greeting_not_human_duplex_acceptance" };
+ws.on("upgrade", response => { Object.assign(metrics, { edgeId: response.headers["x-vercel-id"] ?? "unavailable" }); });
 let seq = 0; let canceled = false;
 function send(type: string) { ws.send(JSON.stringify({ protocolVersion: 1, eventId: randomUUID(), sessionId: session.id, epoch: 0, seq: seq++, type })); }
 await new Promise<void>(resolve => {
@@ -45,5 +46,6 @@ await new Promise<void>(resolve => {
 });
 mkdirSync("artifacts/g1-voice", { recursive: true });
 writeFileSync("artifacts/g1-voice/relay-probe.json", JSON.stringify(metrics, null, 2));
+writeFileSync(`artifacts/g1-voice/relay-${Date.now()}.json`, JSON.stringify(metrics, null, 2));
 console.log(JSON.stringify(metrics, null, 2));
 if (metrics.status !== "greeting_audio_received_cancel_sent") process.exitCode = 1;

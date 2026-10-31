@@ -1,7 +1,7 @@
 import { ServerMessage, Session, type Caption, type Locale } from "@nether/contracts";
 import { RECONNECT_DELAYS_MS } from "@nether/party-core";
 import { AudioEngine } from "./audio/engine";
-export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: Caption; userCaption?: Caption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number };
+export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: Caption; userCaption?: Caption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number };
 export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false };
 export class VoiceClient {
   private audio = new AudioEngine();
@@ -110,7 +110,7 @@ export class VoiceClient {
   interrupt() {
     const at = performance.now(); this.audio.clear();
     if (this.activeResponse) { this.canceled.add(this.activeResponse); this.send({ type: "response.cancel", responseId: this.activeResponse }); this.activeResponse = undefined; }
-    this.update({ phase: this.ready ? "listening" : this.view.phase, caption: undefined, stopMs: Math.round(performance.now() - at) });
+    this.update({ phase: this.ready ? "listening" : this.view.phase, caption: undefined, interruptedAt: at, stopMs: Math.round(performance.now() - at) });
   }
   mute(value: boolean) { this.audio.mute(value); this.update({ muted: value }); }
   rms() { return this.audio.rms(); }

@@ -16,7 +16,7 @@ chmodSync(".env.local", 0o600);
 const defaults: Record<string, string> = {
   QWEN_REALTIME_URL: "wss://maas.qianwenaiapi.com/api-ws/v1/realtime", QWEN_REALTIME_MODEL: "qwen-audio-3.1-realtime-plus",
   QWEN_TEXT_BASE_URL: "https://maas.qianwenaiapi.com/compatible-mode/v1", QWEN_TEXT_MODEL: "qwen3.6-flash",
-  HUNYUAN_3D_BASE_URL: "https://tokenhub.tencentmaas.com", VOICE_ENABLED: "false", NEXT_PUBLIC_CAMPAIGN_ID: "halloween-2026", NEXT_PUBLIC_SITE_URL: "https://nether-council.vercel.app",
+  HUNYUAN_3D_BASE_URL: "https://api.ai3d.cloud.tencent.com", VOICE_ENABLED: "false", NEXT_PUBLIC_CAMPAIGN_ID: "halloween-2026", NEXT_PUBLIC_SITE_URL: "https://nether-council.vercel.app",
 };
 const names = ["QWEN_DUPLEX_API_KEY", "QWEN_TEXT_API_KEY", "HUNYUAN_3D_API_KEY", ...Object.keys(defaults), "SESSION_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "HOST_ACCESS_SECRET", "NEXT_PUBLIC_SITE_URL"];
 const entries = [...new Set(names)].flatMap(key => {

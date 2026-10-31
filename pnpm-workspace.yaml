@@ -4,3 +4,6 @@ packages:
 allowBuilds:
   esbuild: true
   koffi: false
+
+overrides:
+  use-sync-external-store: 1.7.0

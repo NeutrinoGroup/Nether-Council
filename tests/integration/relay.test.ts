@@ -34,6 +34,17 @@ test("bridge keeps uploading while speaking; barge-in drops old audio and closes
   remote!.send(JSON.stringify({ type: "response.done", response: { id: "a", status: "cancelled" } }));
   await waitFor(() => received.some(e => e.type === "speech.started") && upstreamMessages.some(e => e.type === "response.cancel"));
   expect(received.filter(e => e.type === "audio.delta")).toHaveLength(5);
+  // Qwen may finish inference before the cancel reaches it, while audio is still in flight.
+  remote!.send(JSON.stringify({ type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Conversation has no active response.", param: "response.cancel" } }));
+  remote!.send(JSON.stringify({ type: "response.created", response: { id: "b" } }));
+  remote!.send(JSON.stringify({ type: "response.audio.delta", response_id: "b", delta: "AAA=" }));
+  await waitFor(() => received.some(e => e.type === "audio.delta" && e.responseId === "b") || received.some(e => e.type === "error"));
+  expect(received.some(e => e.type === "error")).toBe(false);
+  expect(received.some(e => e.type === "audio.delta" && e.responseId === "b")).toBe(true);
+  // The same generic error code for a different problem must still fail closed.
+  remote!.send(JSON.stringify({ type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Unsupported voice.", param: "session.voice" } }));
+  await waitFor(() => received.some(e => e.type === "error"));
+  expect(received.find(e => e.type === "error")?.error.code).toBe("UPSTREAM_UNAVAILABLE");
   client.close(); await waitFor(() => upstreamClosed && finished);
 });
 test("wrong first-session ownership never opens a paid upstream", async () => {
