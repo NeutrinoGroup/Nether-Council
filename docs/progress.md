@@ -108,3 +108,20 @@
   - `pnpm test`：全部 13 个测试套件、46 项 Vitest 单元与集成测试全绿。
   - `pnpm test:e2e`：全部 18 项 Playwright 跨视口端到端测试全绿。
   - `pnpm check`：lint、类型、测试、资产哈希、生产 Next.js 优化构建全部通过。
+
+## G4 T15 现场主持模式、大屏字幕、BGM 避让压低与全场祝词狂欢（2026-11-01）
+
+- PR #15（`1944a55`）已合入 main 并在线上正式环境通过 `pnpm smoke` 验证。从 main 创建分支 `feat/host-mode-celebration` 推进 T15。
+- T15 现场主持大屏与控制台：
+  - 路由 `/host` 校验 `HOST_ACCESS_SECRET`，并支持生成指向手机入场页的常驻二维码。
+  - 主屏配备超大字号（32px）双语台词与现场发言字幕展示，配备 48 柱音频波形能量条。
+  - 实现原生 Web Audio 合成背景音控制器 `BgmController`，支持在角色或现场持麦发言时毫秒级平滑压低增益约 15.5dB（0.12 -> 0.02），静音后平滑复原。
+  - 支持主持一键触发全场举杯/祝词（`All-Hall Celebration`），伴随和弦钟鸣与全屏横幅，并在每接待 4 位来宾时自动弹出祝词建议 Toast。
+  - 提供“下一位来宾”一键流转：彻底清理并断开上一位来宾的音频与会话上下文，重置状态并安全递增计数。
+- 质量验证：
+  - `pnpm lint`：0 错误，0 警告。
+  - `pnpm typecheck`：通过全部类型检查。
+  - `pnpm test`：全部 14 个测试套件、50 个 Vitest 单元与集成测试全绿（包含 `host.test.ts` 4 项测试）。
+  - `pnpm test:e2e`：全部 20 项 Playwright 端到端测试全绿（涵盖桌面与移动端的现场大屏主持与全场祝词交互）。
+  - 生产构建：`pnpm check`（lint、typecheck、test、assets:verify、build）全部成功。
+
