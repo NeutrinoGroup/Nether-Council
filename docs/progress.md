@@ -7,7 +7,8 @@
 - 两份用户附件与仓库中的 plan、spec 逐字一致。
 - 开始实施时远端没有分支／提交，本地只有规范、环境示例与忽略文件。
 - GitHub 已登录 `moonhotline`，仓库可写；Vercel 连接可访问 `oodai` 团队。
-- 本地 `.env` 为空，`.env.example` 没有配置值；真实语音、文字、3D 权限尚未验证。已请求把运行时凭据配置到忽略的 `.env.local`。
+- 用户补充配置后重新读取 `.env`：语音、3D 变量均有值，未输出凭据。真实 Qwen WS 返回 `session.created`；`qwen3.6-flash` 文字请求 HTTP 200。
+- 混元密钥在 TokenHub `https://tokenhub.tencentmaas.com/v1/api/3d/query` 查询不存在任务时返回 HTTP 401 / `401002`；尚未核实密钥所属平台，不计为权限通过。原始匿名报告在忽略的 `artifacts/g0/providers.json`。
 - 初始化阶段不生成其余六个角色，不把占位模型、模拟语音或自动化浏览器代替真人验收。
 
 ## PR 交付
