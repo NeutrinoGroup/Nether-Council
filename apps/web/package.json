@@ -18,6 +18,7 @@
     "@react-three/fiber": "9.8.2",
     "@vercel/functions": "3.10.5",
     "next": "16.4.3",
+    "qrcode": "^1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.187.0",
@@ -25,6 +26,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@types/three": "0.187.0",
