@@ -3,12 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build --webpack",
+    "dev": "pnpm audio:build && next dev",
+    "build": "pnpm audio:build && next build --webpack",
     "start": "next start",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "audio:build": "esbuild src/features/voice/audio/worklet.ts --bundle --format=esm --outfile=public/worklets/capture.js"
   },
   "dependencies": {
+    "@fontsource/bungee": "^5.3.0",
+    "@fontsource/ma-shan-zheng": "^5.3.1",
     "@nether/contracts": "workspace:*",
     "@nether/party-core": "workspace:*",
     "@vercel/functions": "3.10.5",
@@ -22,5 +25,6 @@
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@types/ws": "8.18.1"
-  }
+  },
+  "type": "module"
 }
