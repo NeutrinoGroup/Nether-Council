@@ -9,13 +9,14 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@nether/contracts": "workspace:*",
+    "@nether/party-core": "workspace:*",
+    "@vercel/functions": "3.10.5",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "@vercel/functions": "3.10.5",
     "ws": "8.18.3",
-    "@nether/contracts": "workspace:*",
-    "@nether/party-core": "workspace:*"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/react": "19.2.7",

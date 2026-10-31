@@ -13,4 +13,7 @@
 
 ## PR 交付
 
-初始空仓库先建立规范基线，后续实现通过可独立审查的 PR 提交与合并。实际 PR 地址、验证命令及结果将在产生后追加。
+初始空仓库先建立规范基线，后续实现通过可独立审查的 PR 提交与合并。实际 PR 地址、验证命令及结果如下。
+
+- [PR #6](https://github.com/NeutrinoGroup/Nether-Council/pull/6)：工程、CI、健康检查与厂商探测，已合并；GitHub Actions 通过（48 秒）。
+- 会话协议 PR：增加严格 schema、签名票据、纯状态机与事件隔离测试。`pnpm check` 本机通过；待 PR CI 与中继集成后继续核验 T04。
