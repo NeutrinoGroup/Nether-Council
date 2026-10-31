@@ -1,7 +1,7 @@
-import { ServerMessage, Session, EncounterDraft, IdentityResult, type ConfirmedTurn, type Locale } from "@nether/contracts";
+import { ServerMessage, Session, EncounterDraft, IdentityResult, type CharacterId, type ConfirmedTurn, type Locale } from "@nether/contracts";
 import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
 import { AudioEngine } from "./audio/engine";
-export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "error" };
+export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "error" };
 export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
   private audio = new AudioEngine();
@@ -25,7 +25,7 @@ export class VoiceClient {
   private view: VoiceView = idleView;
   constructor(private notify: (view: VoiceView) => void) {}
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
-  async start(locale: Locale, invite: string, ref?: string, nickname = "") {
+  async start(locale: Locale, invite: string, ref?: string, nickname = "", characterId: CharacterId = "meng-po") {
     this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now(); this.update({ phase: "permission" });
     try {
@@ -37,7 +37,7 @@ export class VoiceClient {
       });
       if (this.disposed) return;
       this.update({ phase: "connecting" });
-      const response = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, signal: this.abort.signal, body: JSON.stringify({ characterId: "meng-po", locale, invite, ...(ref ? { ref } : {}) }) });
+      const response = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, signal: this.abort.signal, body: JSON.stringify({ characterId, locale, invite, ...(ref ? { ref } : {}) }) });
       const body = await response.json();
       if (!response.ok) return this.fail(typeof body.error === "string" ? body.error : "ADMISSION_FAILED");
       const session = Session.parse(body.session);
