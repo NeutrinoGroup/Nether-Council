@@ -34,14 +34,15 @@ try {
   const data = await response.json();
   report.text = { endpoint: textBase, model: textModel, status: response.ok && data.choices?.[0]?.message?.content ? "authenticated" : "api_error", httpStatus: response.status, ...(response.ok ? {} : { code: safeCode(data.error?.code) }) };
 } catch { report.text = { endpoint: textBase, model: textModel, status: "connection_error" }; }
-const hunyuanBase = process.env.HUNYUAN_3D_BASE_URL ?? "https://tokenhub.tencentmaas.com";
+const hunyuanBase = process.env.HUNYUAN_3D_BASE_URL ?? "https://api.ai3d.cloud.tencent.com";
 try {
-  const response = await fetch(`${hunyuanBase}/v1/api/3d/query`, {
-    method: "POST", headers: { Authorization: `Bearer ${process.env.HUNYUAN_3D_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "hy-3d-3.1", id: "verification-nonexistent" }), signal: AbortSignal.timeout(20_000),
+  const response = await fetch(`${hunyuanBase}/v1/ai3d/query`, {
+    method: "POST", headers: { Authorization: process.env.HUNYUAN_3D_API_KEY ?? "", "Content-Type": "application/json" },
+    body: JSON.stringify({ JobId: "0000000000000000000" }), signal: AbortSignal.timeout(20_000),
   });
   const data = await response.json();
-  report.hunyuan = { endpoint: hunyuanBase, operation: "query_nonexistent_job", httpStatus: response.status, code: safeCode(data.error?.code ?? data.code ?? data.error?.type), status: response.ok ? "query_accepted" : "api_error" };
+  const code = safeCode(data.Response?.Error?.Code ?? data.error?.code ?? data.code);
+  report.hunyuan = { endpoint: hunyuanBase, operation: "query_nonexistent_job", httpStatus: response.status, code, status: response.ok && code === "FailedOperation.JobNotFound" ? "authenticated" : "api_error" };
 } catch { report.hunyuan = { endpoint: hunyuanBase, status: "connection_error" }; }
 mkdirSync("artifacts/g0", { recursive: true });
 writeFileSync("artifacts/g0/providers.json", JSON.stringify(report, null, 2));

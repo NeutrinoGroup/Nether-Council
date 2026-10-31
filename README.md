@@ -21,7 +21,7 @@ pnpm probe:providers
 pnpm test:e2e
 ```
 
-环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。当前 `/play` 提供中／英文孟婆语音试场：实际 AudioWorklet 采集与流式播放、插话、静音和有界重连。需要签名邀请；身份卡和其他角色尚未开放。真人与现场设备验收仍待完成。
+环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。当前 `/play` 提供中／英文孟婆语音试场：实际 AudioWorklet 采集与流式播放、插话、静音和有界重连，并加载真实混元 GLB，以播放 RMS 驱动独立嘴部。需要签名邀请；身份卡和其他角色尚未开放。最新部署验证及真人、现场设备验收状态见实施进展。
 
 `pnpm dev` 用于界面；WS 开发使用 `pnpm dev:voice`（Vercel CLI）。正式验收仍需 HTTPS 预览及真实设备。探测命令会实际调用已配置的语音和文字接口，3D 仅查询不存在任务，不提交生成；报告不含凭据。普通 CI 不调用付费模型。
 
@@ -29,7 +29,7 @@ pnpm test:e2e
 
 ```bash
 pnpm env:vercel
-pnpm exec vercel deploy --scope oodai --non-interactive --yes
+pnpm exec vercel deploy --regions hkg1 --local-config apps/web/vercel.json --scope oodai --non-interactive --yes
 pnpm smoke --url https://nether-council.vercel.app
 pnpm probe:relay --url https://<preview-host>
 pnpm telemetry:collect --since 30m
@@ -41,3 +41,9 @@ pnpm report:pilot
 日志采集依赖 Vercel 保留期与主动运行命令；分页边界、延迟、截断和未采集期间可能丢失事件。下载文件生成与系统分享唤起均不代表用户真的保存或分享，真实试场需观察记录。
 
 开场邀请：`pnpm invite:create --url https://nether-council.vercel.app --hours 2`，在本机 `artifacts/invites/latest.json` 读取链接。[真人语音试场手册](docs/runbooks/voice-trial.md)说明三轮中英问答、插话和声学延迟的验收方法。
+
+## 孟婆模型
+
+已提交 1.26 MiB 自包含 GLB 与生成海报，来源及精确哈希见 [资产清单](docs/assets/meng-po.source.json)。单网格无面部绑定，使用独立嘴部；眼睛静态。3D 加载失败会明确显示海报提示，语音可独立工作。
+
+`pnpm assets:verify` 校验哈希、8 MiB 大小限制和 2K 贴图；包含于 `pnpm check`。需要复现优化时执行 `pnpm assets:prepare:meng-po --input /absolute/path/original.glb`，输入须匹配来源清单中的原始哈希。该命令不调用付费生成。Mac 与手机两分钟验收方法见 [模型试场手册](docs/runbooks/model-trial.md)。

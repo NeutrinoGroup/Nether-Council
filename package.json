@@ -12,7 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "build": "pnpm --filter @nether/web build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm assets:verify && pnpm build",
     "test:e2e": "playwright test",
     "smoke": "tsx scripts/smoke.ts",
     "probe:providers": "tsx scripts/probe-providers.ts",
@@ -20,10 +20,13 @@
     "env:vercel": "tsx scripts/configure-vercel.ts",
     "telemetry:collect": "tsx scripts/collect-telemetry.ts",
     "report:pilot": "tsx scripts/report-pilot.ts",
-    "invite:create": "tsx scripts/create-invite.ts"
+    "invite:create": "tsx scripts/create-invite.ts",
+    "assets:verify": "tsx scripts/verify-assets.ts",
+    "assets:prepare:meng-po": "tsx scripts/prepare-meng-po.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
+    "@gltf-transform/cli": "4.5.1",
     "@nether/contracts": "workspace:*",
     "@nether/party-core": "workspace:*",
     "@playwright/test": "1.64.1",

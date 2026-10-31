@@ -14,16 +14,20 @@
     "@fontsource/ma-shan-zheng": "^5.3.1",
     "@nether/contracts": "workspace:*",
     "@nether/party-core": "workspace:*",
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
     "@vercel/functions": "3.10.5",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "three": "0.187.0",
     "ws": "8.18.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@types/three": "0.187.0",
     "@types/ws": "8.18.1"
   },
   "type": "module"

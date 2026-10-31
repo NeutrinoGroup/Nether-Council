@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 const id = "11111111-1111-4111-8111-111111111111";
 test("missing invitation keeps paid voice entry closed", async ({ page }, info) => {
   await page.goto("/play?lang=en");
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeDisabled();
   await expect(page.getByText("You need an event invitation.", { exact: false })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
@@ -27,19 +28,22 @@ test("worklet uploads during playback; interruption, mute, isolation and stop wo
   });
   await page.goto("/?invite=test-fixture&lang=en");
   await expect(page).toHaveURL(/\/play\?.*invite=test-fixture/);
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
   await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(3);
-  const pcm = Buffer.alloc(24000 * 2 * 3);
+  const pcm = Buffer.alloc(24000 * 2 * 6);
   for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 15) * 3000), i * 2);
   for (let offset = 0; offset < pcm.length; offset += 24000) send({ type: "audio.delta", responseId: "response-a", audio: pcm.subarray(offset, offset + 24000).toString("base64") });
   send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "response-a", segmentId: "response-a", revision: 1, sourceLocale: "en", sourceText: "Five meetings and a deadline mix-up? Tell me which meeting could have been a pumpkin soup break.", speaker: "character", final: false } });
   await expect(page.getByText("Meng Po is speaking", { exact: true })).toBeVisible();
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-mouth-level").then(Number)).toBeGreaterThan(0);
   const previous = messages.filter(e => e.type === "audio.append").length;
   await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(previous + 5);
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: `.impeccable/review/${info.project.name}-live.png`, fullPage: true });
   await page.getByRole("button", { name: "Interrupt Meng Po", exact: true }).click();
   await expect.poll(() => messages.some(e => e.type === "response.cancel")).toBe(true);
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-mouth-level").then(Number)).toBe(0);
   // In-flight old audio cannot restart playback after the user interrupted.
   send({ type: "audio.delta", responseId: "response-a", audio: "AAA=" });
   await expect(page.getByRole("button", { name: "Interrupt Meng Po", exact: true })).toBeDisabled();
@@ -64,9 +68,17 @@ test("worklet uploads during playback; interruption, mute, isolation and stop wo
 
 test("Chinese entry shows its character and has no horizontal overflow", async ({ page }, info) => {
   await page.goto("/play?invite=test-fixture&lang=zh");
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await expect(page.getByRole("heading", { name: "孟婆", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "开麦，找孟婆聊聊" })).toBeEnabled();
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: `.impeccable/review/${info.project.name}-zh.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("model failure names the downgrade and keeps the voice entry available", async ({ page }) => {
+  await page.route("**/models/meng-po.glb", route => route.fulfill({ status: 503, body: "Asset unavailable" }));
+  await page.goto("/play?invite=test-fixture&lang=en");
+  await expect(page.getByText("3D is unavailable. Voice still works.", { exact: true })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeEnabled();
 });

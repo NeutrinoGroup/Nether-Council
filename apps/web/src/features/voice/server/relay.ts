@@ -3,14 +3,14 @@ import WebSocket from "ws";
 import { z } from "zod";
 import { parseClientMessage, type Session, type ServerMessage } from "@nether/contracts";
 import { mengPoPrompt } from "./prompt";
-const Upstream = z.looseObject({ type: z.string(), response_id: z.string().optional(), item_id: z.string().optional(), delta: z.string().optional(), transcript: z.string().optional(), text: z.string().optional(), response: z.looseObject({ id: z.string(), status: z.string().optional() }).optional(), error: z.looseObject({ code: z.string().optional() }).optional() });
+const Upstream = z.looseObject({ type: z.string(), response_id: z.string().optional(), item_id: z.string().optional(), delta: z.string().optional(), transcript: z.string().optional(), text: z.string().optional(), response: z.looseObject({ id: z.string(), status: z.string().optional() }).optional(), error: z.looseObject({ code: z.string().optional(), type: z.string().optional(), param: z.string().optional(), message: z.string().max(2000).optional() }).optional() });
 type Config = { realtimeKey: string; realtimeUrl: string; realtimeModel: string };
 type Outgoing = ServerMessage extends infer T ? T extends ServerMessage ? Omit<T, "protocolVersion" | "eventId" | "sessionId" | "epoch" | "seq"> : never : never;
 export function relayVoice(client: WebSocket, session: Session, config: Config): Promise<void> {
   return new Promise(resolve => {
     let upstream: WebSocket | undefined, closed = false, started = false, ready = false;
     let seq = 0, lastClientSeq = -1, epoch = 0, activeResponse: string | undefined;
-    let bytes = 0, count = 0, readyAt = 0;
+    let bytes = 0, count = 0, readyAt = 0, pendingCancelErrors = 0;
     let readyTimer: ReturnType<typeof setTimeout> | undefined;
     const canceled = new Set<string>(); const captions = new Map<string, string>();
     // Only bounded operational codes: never credentials, provider messages, transcripts or audio.
@@ -21,7 +21,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       client.send(JSON.stringify({ protocolVersion: 1, eventId: randomUUID(), sessionId: session.id, epoch, seq: seq++, ...event }));
     };
     const upstreamSend = (event: object) => { if (upstream?.readyState === WebSocket.OPEN) upstream.send(JSON.stringify(event)); };
-    const cancel = () => { if (activeResponse) { canceled.add(activeResponse); activeResponse = undefined; upstreamSend({ type: "response.cancel" }); } };
+    const cancel = () => { if (activeResponse) { canceled.add(activeResponse); activeResponse = undefined; pendingCancelErrors++; upstreamSend({ type: "response.cancel" }); } };
     function shutdown(code = 1000, reason = "Session ended") {
       if (closed) return; closed = true;
       clearTimeout(startTimer); clearTimeout(expiryTimer); clearTimeout(captureTimer); clearTimeout(readyTimer);
@@ -38,7 +38,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const openUpstream = (resumeTurns: { role: "user" | "assistant"; text: string }[] = []) => {
       readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 15000);
       const url = new URL(config.realtimeUrl); url.searchParams.set("model", config.realtimeModel);
-      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 12_000, maxPayload: 1_048_576 });
+      // Explicit IPv4 avoids the deployed runtime's upstream handshake timeout; retain hostname TLS verification.
+      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 12_000, family: 4, maxPayload: 1_048_576 });
       upstream.on("unexpected-response", (_, response) => { response.resume(); diagnostic("handshake", response.statusCode); fail("UPSTREAM_UNAVAILABLE"); });
       upstream.on("error", error => { if (!closed) { diagnostic("transport", error.message === "Opening handshake has timed out" ? "HANDSHAKE_TIMEOUT" : "code" in error ? String(error.code) : undefined); fail("UPSTREAM_UNAVAILABLE"); } });
       upstream.on("close", code => { if (!closed) { diagnostic("upstream_close", code); shutdown(1011, "Upstream disconnected"); } });
@@ -75,8 +76,11 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           send({ type: "response.done", responseId: event.response.id }); captions.delete(event.response.id);
           if (activeResponse === event.response.id) activeResponse = undefined;
         } else if (event.type === "error") {
-          // Cancel may race the provider's automatic VAD cancel; only that documented race is harmless.
-          if (event.error?.code !== "response_cancel_not_active") { diagnostic("provider", event.error?.code); fail("UPSTREAM_UNAVAILABLE"); }
+          // Qwen can finish inference before a cancel arrives while TTS audio remains in flight.
+          // Never swallow generic invalid_value errors or errors without a preceding cancel.
+          const noActiveResponse = event.error?.code === "response_cancel_not_active" || (event.error?.code === "invalid_value" && event.error.type === "invalid_request_error" && event.error.param === "response.cancel" && event.error.message === "Conversation has no active response.");
+          if (pendingCancelErrors > 0 && noActiveResponse) pendingCancelErrors--;
+          else { diagnostic("provider", event.error?.code); fail("UPSTREAM_UNAVAILABLE"); }
         }
       });
     };

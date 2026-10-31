@@ -1,0 +1,63 @@
+{
+  "characterId": "meng-po",
+  "provider": "Tencent Hunyuan 3D legacy OpenAI-compatible API",
+  "endpoint": "https://api.ai3d.cloud.tencent.com",
+  "generatedAt": "2026-10-31T19:17:16.643Z",
+  "generation": {
+    "Model": "3.1",
+    "FaceCount": 30000,
+    "EnablePBR": true,
+    "Prompt": "一位亲切机灵的中国神话孟婆，南瓜忘忧汤酒保，风格化高质量游戏角色，完整单人全身，正面站立，宽松深紫中式长袍，橙色围裙，银白盘发，慈祥又俏皮的脸，清晰五官与自然闭合嘴唇，手捧橙色南瓜汤碗，造型简洁，干净材质，手臂稍微离开躯干，适合手机浏览器展示。无文字，无底座，无背景，无额外人物，无恐怖血腥元素。"
+  },
+  "creditsConsumed": 40,
+  "usageBasis": {
+    "kind": "generated_with_project_owner_account",
+    "terms": "https://cloud.tencent.com/document/product/1804/122967",
+    "note": "Provider service terms apply; no claim of public-domain or CC licensing."
+  },
+  "original": {
+    "bytes": 29557484,
+    "sha256": "357f49c1d1d78c7da8b1d75f5ead293fe1888d25229f8cf448ebddca035fcbc9"
+  },
+  "processing": {
+    "tool": "@gltf-transform/cli@4.5.1",
+    "commands": [
+      "gltf-transform resize original.glb model-2k.glb --width 2048 --height 2048",
+      "gltf-transform webp model-2k.glb meng-po.glb --quality 90"
+    ],
+    "geometryChanged": false,
+    "maxTextureSize": 2048,
+    "textureFormat": "WebP"
+  },
+  "structure": {
+    "triangles": 29992,
+    "vertices": 20564,
+    "meshes": 1,
+    "textures": 3,
+    "bones": 0,
+    "morphTargets": 0,
+    "animationClips": 0
+  },
+  "validation": {
+    "errors": 0,
+    "warnings": [
+      "MESH_PRIMITIVE_GENERATED_TANGENT_SPACE: normal mapping uses runtime-generated tangent space"
+    ],
+    "discardedExperiment": "Precomputed tangent experiment produced one zero tangent; not shipped."
+  },
+  "animationPlan": {
+    "mouth": "Independently positioned mouth mesh; actual playback RMS only. Calibrate against rendered face.",
+    "eyes": "Baked eyes remain static; no facial rig claimed.",
+    "body": "Small whole-body idle/listening/celebration transforms; never use body stretch as mouth."
+  },
+  "files": {
+    "apps/web/public/models/meng-po.glb": {
+      "bytes": 1319240,
+      "sha256": "53459741ea2002df82aa8041b5abda1bec63da4a7c6905f332a7b81fc256eebe"
+    },
+    "apps/web/public/posters/meng-po.png": {
+      "bytes": 90381,
+      "sha256": "1b2828ab7bce0a6aec7c01c8618817f1b17ac068ea2c293e33f3076c4a16d623"
+    }
+  }
+}
