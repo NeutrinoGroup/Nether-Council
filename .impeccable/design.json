@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T19:19:06.647344+00:00",
+  "title": "Design System: Nether Council",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Aubergine Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.0748 315.30)",
+          "oklch(26.43% 0.0748 315.30)",
+          "oklch(37.86% 0.0748 315.30)",
+          "oklch(49.29% 0.0748 315.30)",
+          "oklch(60.71% 0.0748 315.30)",
+          "oklch(72.14% 0.0748 315.30)",
+          "oklch(83.57% 0.0748 315.30)",
+          "oklch(95.00% 0.0748 315.30)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Peach Ground",
+        "tonalRamp": [
+          "oklch(15.00% 0.0553 35.03)",
+          "oklch(26.43% 0.0553 35.03)",
+          "oklch(37.86% 0.0553 35.03)",
+          "oklch(49.29% 0.0553 35.03)",
+          "oklch(60.71% 0.0553 35.03)",
+          "oklch(72.14% 0.0553 35.03)",
+          "oklch(83.57% 0.0553 35.03)",
+          "oklch(95.00% 0.0553 35.03)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "tonalRamp": [
+          "oklch(15.00% 0.0293 80.66)",
+          "oklch(26.43% 0.0293 80.66)",
+          "oklch(37.86% 0.0293 80.66)",
+          "oklch(49.29% 0.0293 80.66)",
+          "oklch(60.71% 0.0293 80.66)",
+          "oklch(72.14% 0.0293 80.66)",
+          "oklch(83.57% 0.0293 80.66)",
+          "oklch(95.00% 0.0293 80.66)"
+        ]
+      },
+      "pumpkin": {
+        "role": "primary",
+        "displayName": "Pumpkin Signal",
+        "tonalRamp": [
+          "oklch(15.00% 0.1368 62.02)",
+          "oklch(26.43% 0.1368 62.02)",
+          "oklch(37.86% 0.1368 62.02)",
+          "oklch(49.29% 0.1368 62.02)",
+          "oklch(60.71% 0.1368 62.02)",
+          "oklch(72.14% 0.1368 62.02)",
+          "oklch(83.57% 0.1368 62.02)",
+          "oklch(95.00% 0.1368 62.02)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Lilac Caption",
+        "tonalRamp": [
+          "oklch(15.00% 0.0521 334.32)",
+          "oklch(26.43% 0.0521 334.32)",
+          "oklch(37.86% 0.0521 334.32)",
+          "oklch(49.29% 0.0521 334.32)",
+          "oklch(60.71% 0.0521 334.32)",
+          "oklch(72.14% 0.0521 334.32)",
+          "oklch(83.57% 0.0521 334.32)",
+          "oklch(95.00% 0.0521 334.32)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Plum Line",
+        "tonalRamp": [
+          "oklch(15.00% 0.0604 333.56)",
+          "oklch(26.43% 0.0604 333.56)",
+          "oklch(37.86% 0.0604 333.56)",
+          "oklch(49.29% 0.0604 333.56)",
+          "oklch(60.71% 0.0604 333.56)",
+          "oklch(72.14% 0.0604 333.56)",
+          "oklch(83.57% 0.0604 333.56)",
+          "oklch(95.00% 0.0604 333.56)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display-latin": {
+        "displayName": "Latin character name",
+        "purpose": "Bungee for Latin character headings; responsive sizes are documented in Layout and component CSS."
+      },
+      "display-han": {
+        "displayName": "Chinese character name",
+        "purpose": "Ma Shan Zheng for Chinese character headings."
+      },
+      "opening": {
+        "displayName": "Opening invitation",
+        "purpose": "Balanced invitation above the live state."
+      },
+      "caption": {
+        "displayName": "Character transcript",
+        "purpose": "Readable source-language captions on aubergine."
+      },
+      "body": {
+        "displayName": "Body copy",
+        "purpose": "Instructions and participant transcripts in system sans-serif."
+      },
+      "label": {
+        "displayName": "Field label",
+        "purpose": "Semibold language legends."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "playback-level",
+        "value": "Math.min(1, measurePlayback() * 7)",
+        "purpose": "requestAnimationFrame samples actual playback RMS; no synthetic ambient animation."
+      },
+      {
+        "name": "bar-scale",
+        "value": "scaleY(calc(.09 + var(--level)*var(--amplitude)))",
+        "purpose": "Thirty-nine bars return to the 0.09 baseline without playback."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "scaleY(.09)",
+        "purpose": "prefers-reduced-motion: reduce fixes the bars; sampler also writes zero level."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-max",
+        "value": "640px"
+      },
+      {
+        "name": "tablet-max",
+        "value": "900px"
+      },
+      {
+        "name": "wide-min",
+        "value": "1500px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Start voice",
+      "kind": "button",
+      "description": "Dark start action with microphone; pumpkin hover.",
+      "html": "<button class=\"ds-start\">Turn on mic & meet Meng Po<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" aria-hidden=\"true\"><rect x=\"9\" y=\"2\" width=\"6\" height=\"12\" rx=\"3\"></rect><path d=\"M5 10v1a7 7 0 0 0 14 0v-1M12 18v4M8 22h8\"></path></svg></button>",
+      "css": ".ds-start{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:16px;border:1px solid currentColor;border-radius:12px;padding:14px 20px;min-height:50px;cursor:pointer;outline-offset:5px;background:var(--ink,#351a40);color:var(--paper,#fff3df);border-color:var(--ink,#351a40);display:flex;justify-content:space-between;align-items:center;gap:48px;min-width:330px;font-weight:650}.ds-start:hover:not(:disabled){background:var(--pumpkin,#ffab5c);color:var(--ink,#351a40)}.ds-start:focus-visible{outline:3px solid var(--ink,#351a40);outline-offset:5px;}.ds-start:disabled{opacity:.55;cursor:not-allowed}@media(max-width:640px){.ds-start{width:100%;min-width:0;gap:16px}}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Live control",
+      "kind": "button",
+      "description": "Plain secondary control for mute or interrupt.",
+      "html": "<button class=\"ds-control\" aria-pressed=\"false\">Mute microphone</button>",
+      "css": ".ds-control{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:16px;border:1px solid currentColor;border-radius:12px;padding:14px 20px;min-height:50px;cursor:pointer;outline-offset:5px;background:transparent;color:var(--ink,#351a40)}.ds-control:hover:not(:disabled){background:var(--paper,#fff3df);color:var(--ink,#351a40)}.ds-control:focus-visible{outline:3px solid var(--ink,#351a40);outline-offset:5px;}.ds-control:disabled{opacity:.55;cursor:not-allowed}@media(max-width:640px){.ds-control{padding:12px;font-size:13px;min-width:90px}}",
+      "refersTo": "button-secondary"
+    },
+    {
+      "name": "End conversation",
+      "kind": "button",
+      "description": "Dark stop control separated from other live actions.",
+      "html": "<button class=\"ds-stop\">End conversation</button>",
+      "css": ".ds-stop{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:16px;border:1px solid currentColor;border-radius:12px;padding:14px 20px;min-height:50px;cursor:pointer;outline-offset:5px;background:var(--ink,#351a40);color:var(--paper,#fff3df);border-color:var(--ink,#351a40);margin-left:24px}.ds-stop:hover:not(:disabled){background:var(--paper,#fff3df);color:var(--ink,#351a40)}.ds-stop:focus-visible{outline:3px solid var(--ink,#351a40);outline-offset:5px;}.ds-stop:disabled{opacity:.55;cursor:not-allowed}@media(max-width:640px){.ds-stop{margin-left:6px;padding:12px;font-size:13px;min-width:90px}}",
+      "refersTo": "button-stop"
+    },
+    {
+      "name": "Language field",
+      "kind": "input",
+      "description": "Native radios with a labelled group; disabled while speaking.",
+      "html": "<fieldset class=\"ds-languages\"><legend>Which language?</legend><div class=\"ds-language-row\"><label><input type=\"radio\" name=\"ds-locale\" value=\"zh\">中文</label><label><input type=\"radio\" name=\"ds-locale\" value=\"en\" checked>English</label></div></fieldset>",
+      "css": ".ds-languages{border:0;padding:0;margin:0;color:var(--ink,#351a40);font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif}.ds-languages legend{font-weight:650;font-size:14px;margin-bottom:12px}.ds-language-row{display:flex;gap:24px}.ds-language-row label{display:flex;gap:8px;align-items:center;min-height:44px;cursor:pointer}.ds-language-row input{width:18px;height:18px;margin:0;accent-color:var(--ink,#351a40)}.ds-language-row input:focus-visible{outline:3px solid var(--ink,#351a40);outline-offset:5px;}@media(max-width:640px){.ds-language-row label{min-height:40px}}"
+    },
+    {
+      "name": "Encounter navigation",
+      "kind": "nav",
+      "description": "Text wordmark and context label separated by one bottom rule.",
+      "html": "<header class=\"ds-nav\"><span class=\"ds-brand\">Nether Council</span><span>Tonight’s encounter</span></header>",
+      "css": ".ds-nav{height:82px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--ink,#351a40);color:var(--ink,#351a40);font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:14px}.ds-brand{font-weight:750;font-size:20px}@media(max-width:900px){.ds-nav{height:70px}}@media(max-width:640px){.ds-nav{height:62px;font-size:12px}.ds-brand{font-size:17px}}"
+    },
+    {
+      "name": "Conversation field",
+      "kind": "card",
+      "description": "Dark flat field with display name, descriptive live state and readable transcript.",
+      "html": "<section class=\"ds-conversation\" aria-labelledby=\"ds-character\"><h1 id=\"ds-character\">Meng Po</h1><p class=\"ds-role\">Your afterlife bartender</p><p class=\"ds-opening\">What’s been ridiculous lately?</p><p class=\"ds-state\" role=\"status\"><span aria-hidden=\"true\"></span>Ready when you are</p><div class=\"ds-captions\"><h2>Meng Po says</h2><p>Start with one ridiculous thing that happened lately.</p></div></section>",
+      "css": ".ds-conversation{background:var(--ink,#351a40);color:var(--paper,#fff3df);padding:40px 42px 0;border-radius:16px;min-width:0;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif}.ds-conversation h1{font-family:Bungee,sans-serif;font-size:60px;font-weight:400;line-height:1.06;letter-spacing:-.025em;margin:0;text-wrap:balance}.ds-role{font-size:15px;margin:12px 0 0;color:var(--muted,#d9b7d1)}.ds-opening{font-size:clamp(23px,2.3vw,34px);line-height:1.4;margin:28px 0 0;max-width:26ch;text-wrap:balance}.ds-state{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--pumpkin,#ffab5c);margin:24px 0 0;min-height:24px}.ds-state span{width:8px;height:8px;border:1px solid currentColor;border-radius:50%;flex-shrink:0}.ds-captions{margin-top:30px;padding-bottom:36px;min-height:180px}.ds-captions h2{font-size:13px;font-weight:500;color:var(--muted,#d9b7d1);margin:0 0 9px}.ds-captions p{font-size:clamp(19px,1.7vw,26px);line-height:1.65;max-width:65ch;max-height:180px;overflow-y:auto;overflow-wrap:anywhere;margin:0;scrollbar-color:var(--line,#86637f) var(--ink,#351a40)}@media(max-width:900px){.ds-conversation{padding:28px 26px 0}.ds-conversation h1{font-size:44px}}@media(max-width:640px){.ds-conversation{padding:26px 24px 0;border-radius:14px}.ds-conversation h1{font-size:43px}.ds-captions p{font-size:20px;line-height:1.6}}",
+      "refersTo": "conversation"
+    },
+    {
+      "name": "Recovery notice",
+      "kind": "card",
+      "description": "Warm paper notice; recovery errors use semibold text and alert semantics.",
+      "html": "<p class=\"ds-notice\" role=\"alert\">Voice ran into a problem. Check your connection, then start again.</p>",
+      "css": ".ds-notice{background:var(--paper,#fff3df);color:var(--ink,#351a40);border-radius:12px;padding:16px;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;font-size:14px;font-weight:650;line-height:1.6;margin:0}@media(max-width:640px){.ds-notice{padding:12px}}",
+      "refersTo": "notice"
+    },
+    {
+      "name": "Audio wristband",
+      "kind": "custom",
+      "description": "Thirty-nine bars driven by real playback. The isolated preview rests at the stopped baseline.",
+      "html": "<div class=\"ds-audio-band\" aria-hidden=\"true\"><span style=\"--amplitude:0.25\"></span><span style=\"--amplitude:0.75\"></span><span style=\"--amplitude:0.46429\"></span><span style=\"--amplitude:0.96429\"></span><span style=\"--amplitude:0.67857\"></span><span style=\"--amplitude:0.39286\"></span><span style=\"--amplitude:0.89286\"></span><span style=\"--amplitude:0.60714\"></span><span style=\"--amplitude:0.32143\"></span><span style=\"--amplitude:0.82143\"></span><span style=\"--amplitude:0.53571\"></span><span style=\"--amplitude:0.25\"></span><span style=\"--amplitude:0.75\"></span><span style=\"--amplitude:0.46429\"></span><span style=\"--amplitude:0.96429\"></span><span style=\"--amplitude:0.67857\"></span><span style=\"--amplitude:0.39286\"></span><span style=\"--amplitude:0.89286\"></span><span style=\"--amplitude:0.60714\"></span><span style=\"--amplitude:0.32143\"></span><span style=\"--amplitude:0.82143\"></span><span style=\"--amplitude:0.53571\"></span><span style=\"--amplitude:0.25\"></span><span style=\"--amplitude:0.75\"></span><span style=\"--amplitude:0.46429\"></span><span style=\"--amplitude:0.96429\"></span><span style=\"--amplitude:0.67857\"></span><span style=\"--amplitude:0.39286\"></span><span style=\"--amplitude:0.89286\"></span><span style=\"--amplitude:0.60714\"></span><span style=\"--amplitude:0.32143\"></span><span style=\"--amplitude:0.82143\"></span><span style=\"--amplitude:0.53571\"></span><span style=\"--amplitude:0.25\"></span><span style=\"--amplitude:0.75\"></span><span style=\"--amplitude:0.46429\"></span><span style=\"--amplitude:0.96429\"></span><span style=\"--amplitude:0.67857\"></span><span style=\"--amplitude:0.39286\"></span></div>",
+      "css": ".ds-audio-band{height:68px;display:flex;gap:6px;padding:12px 24px;align-items:center;background:var(--pumpkin,#ffab5c)}.ds-audio-band span{flex:1;height:100%;background:var(--ink,#351a40);transform:scaleY(calc(.09 + var(--level,0)*var(--amplitude)));border-radius:2px}@media(max-width:640px){.ds-audio-band{height:54px;gap:4px;padding:10px 16px}}@media(prefers-reduced-motion:reduce){.ds-audio-band span{transform:scaleY(.09)}}",
+      "refersTo": "audio-band"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Festival Wristband",
+    "overview": "Broad aubergine, peach and pumpkin regions give Nether Council a warm party identity. Expressive Chinese and Latin character names carry the personality; conventional controls and readable system body text support a conversation in a dim room. The visual tone is playful and confident, with gentle teasing rather than menace.\n\nThis record describes the implemented web system in `apps/web/src/app/globals.css` and `apps/web/src/features/voice/VoiceTrial.tsx`. The voice trial is its first expression. Its particular two-column composition is a surface pattern, not a requirement for future roster, 3D or identity-card screens.",
+    "keyCharacteristics": [
+      "Broad, flat color regions with rounded conversation containers.",
+      "Self-hosted expressive display lettering paired with readable bilingual body text.",
+      "Plain controls with explicit state text, visible keyboard focus and recovery messages.",
+      "A horizontal audio wristband whose movement reflects actual playback."
+    ],
+    "rules": [
+      {
+        "name": "The Paired Contrast Rule",
+        "body": "Use paper or lilac text on aubergine; use aubergine text on peach, paper and pumpkin. The live-state pumpkin text belongs on the aubergine conversation field.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Scripts Rule",
+        "body": "Match the character-name display face to the selected language; keep instructions, transcripts and buttons in the system body stack.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Color Rule",
+        "body": "Build depth with the established color regions and spacing; keep controls and conversation containers free of decorative elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use the paired contrast assignments for text and its surrounding color field.",
+      "**Do** match the character-name face to Chinese or Latin while keeping operational copy in the system body stack.",
+      "**Do** retain native field, disclosure and button semantics with visible keyboard focus.",
+      "**Do** represent live audio with measured playback and hold the wristband still for reduced motion.",
+      "**Do** keep permission and error recovery copy visible where the participant needs it."
+    ],
+    "donts": [
+      "**Don't** use lilac caption text as body copy on peach or paper.",
+      "**Don't** replace descriptive status text with color or waveform movement alone.",
+      "**Don't** add decorative shadows or glow to the flat color containers.",
+      "**Don't** treat the voice trial's two-column arrangement as the required composition of every future screen.",
+      "**Don't** substitute invented character portraits or glowing placeholders for unavailable assets."
+    ]
+  }
+}

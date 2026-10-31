@@ -8,7 +8,7 @@
 - 开始实施时远端没有分支／提交，本地只有规范、环境示例与忽略文件。
 - GitHub 已登录 `moonhotline`，仓库可写；Vercel 连接可访问 `oodai` 团队。
 - 用户补充配置后重新读取 `.env`：语音、3D 变量均有值，未输出凭据。真实 Qwen WS 返回 `session.created`；`qwen3.6-flash` 文字请求 HTTP 200。
-- 混元密钥在 TokenHub `https://tokenhub.tencentmaas.com/v1/api/3d/query` 查询不存在任务时返回 HTTP 401 / `401002`；尚未核实密钥所属平台，不计为权限通过。原始匿名报告在忽略的 `artifacts/g0/providers.json`。
+- 混元密钥在 TokenHub 查询曾返回 HTTP 401 / `401002`。重新核对官方旧接口后，`https://api.ai3d.cloud.tencent.com/v1/ai3d/query` 使用原始 Authorization key 返回 HTTP 200 / `FailedOperation.JobNotFound`，已确认旧平台鉴权。随后提交唯一一份孟婆 textTo3D 3.1、目标 30000 面、PBR 任务；现已 DONE 并取得 GLB／海报（消耗 40 积分）。GLB 29557484 字节、29992 个三角面、三张贴图、单网格，无骨骼／morph／动画；超出 8 MiB 目标，待优化与浏览器验收。报告在忽略的 `artifacts/g0/hunyuan-legacy.json` 和 `artifacts/g2-model/`。
 - 初始化阶段不生成其余六个角色，不把占位模型、模拟语音或自动化浏览器代替真人验收。
 
 ## PR 交付
@@ -16,7 +16,9 @@
 初始空仓库先建立规范基线，后续实现通过可独立审查的 PR 提交与合并。实际 PR 地址、验证命令及结果如下。
 
 - [PR #6](https://github.com/NeutrinoGroup/Nether-Council/pull/6)：工程、CI、健康检查与厂商探测，已合并；GitHub Actions 通过（48 秒）。
-- 会话协议 PR：增加严格 schema、签名票据、纯状态机与事件隔离测试。`pnpm check` 本机通过；待 PR CI 与中继集成后继续核验 T04。
+- [PR #7](https://github.com/NeutrinoGroup/Nether-Council/pull/7)：会话协议、签名票据、纯状态机与事件隔离测试；CI 通过并合并。
+- [PR #8](https://github.com/NeutrinoGroup/Nether-Council/pull/8)：服务端中继、AudioWorklet、ws 外部化与开场请求；CI 通过，2026-10-31 18:26 UTC 合并，main 为 `41730cc`。
+- 当前 `codex/browser-duplex`：`/play` 中英原文字幕、真正 AudioWorklet 上传／24kHz 播放、插话清队列、静音、最多三次重连及原截止时间保持。`pnpm check` 通过（19 项 Vitest），6 项 Playwright 通过。测试使用 Chromium 模拟麦克风和协议夹具，涵盖边播边传、打断后的旧音频、静音停止上行与恢复、自然播完恢复、结束及入口参数保留；不计真人或真实手机验收。
 
 ## 部署与运行时配置
 
@@ -24,4 +26,9 @@
 - 连接器写项目被拒绝，本机 CLI 自有凭据成功创建并部署；Git 连接因 Vercel 对仓库权限不足未接通，当前使用本机 CLI 上传，不声称 push 自动部署。
 - 已通过 CLI 为 preview / production 配置厂商变量与独立 session、campaign、referral、host 密钥；公开变量按 Config 保存，密钥按 Secret 保存。环境是否在函数中正确生效仍由后续真实 smoke 检验。
 - [PR #7](https://github.com/NeutrinoGroup/Nether-Council/pull/7) 已通过 CI（42 秒）并合并。中继在后续 PR 集成严格消息、截止清理、上游取消和 64 KiB 输出切片。
-- `tests/integration/relay.test.ts` 使用本机测试协议端点验证桥接行为；它不是厂商或真人语音验收。语音入口仍是准备页，完整结束、结果与翻译尚未实现。
+- `tests/integration/relay.test.ts` 使用本机测试协议端点验证桥接行为；它不是厂商或真人语音验收。完整结果与翻译尚未实现。
+- 两个事件通过预览 `/api/events` 后收到 202，另重发一个重复 eventId。服务端日志采集 3 条，去重为 2 条，报告漏斗均为 0（仅探测事件）。日志有延迟，首次采集为 0 不算无事件；本机证据 `artifacts/g0/telemetry-probe.json`、`artifacts/telemetry/events.json`。
+- 真实开场中继探针通过：[hkg1 预览](https://nether-council-zask58bqr-oodai.vercel.app)，模型 `qwen-audio-3.1-realtime-plus`／音色 `longanqian_v3.1`，ready 2356ms、首音频 3935ms、收到 449280 字节，发送取消。取消后仍有 23 个在途音频分片，因此客户端必须按 responseId 丢弃，不能只依赖取消上游。此前 sfo1 预览在约 12 秒的传输握手阶段失败；WS 路由现明确选 hkg1，诊断仅含阶段和有限错误码。该探针仍不是真人双工验收。
+- 视觉复核指出的 reduced-motion 播放状态和键盘焦点对比问题已修复；6 张中英桌面／手机测试截图重新生成并核验，复核结论 ship。
+
+- 真实浏览器开场探针通过：同一 hkg1 预览，签名邀请 admission HTTP 200，AudioWorklet 与实际 Qwen 中继收到 11 个音频分片，播放分析器 RMS >0，首音频后仍上传 31 个麦克风分片，打断并结束成功。测试输入为 Chromium 合成麦克风，不计真人问答。预览保护需要 cookie；仅附 OIDC header 时 Worklet addModule 曾 AbortError，CLI 合法取得 bypass cookie 后通过。匿名证据 `artifacts/g1-voice/browser-real.json`。
