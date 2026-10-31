@@ -53,6 +53,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@fontsource/bungee':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/ma-shan-zheng':
+        specifier: ^5.3.1
+        version: 5.3.1
       '@nether/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -710,6 +716,12 @@ packages:
   '@fastify/busboy@2.0.0':
     resolution: {integrity: sha512-JUFJad5lv7jxj926GPgymrWQxxjPYuJNiNjNMzqT+HiuP6Vl3dk5xzG+8sTX96np0ZAluvaMzPsjhHZ5rNuNQQ==}
     engines: {node: '>=14'}
+
+  '@fontsource/bungee@5.3.0':
+    resolution: {integrity: sha512-vKwbDE7yMrqfGxgFan+diPLwgWp9j4FGYaLm+OhUoqYO6Pr02QIi/p0KiTW0E/7uiXqfTd6cMj+/E4h2sc3Ocg==}
+
+  '@fontsource/ma-shan-zheng@5.3.1':
+    resolution: {integrity: sha512-cGGn7Yje2RSduXVxEk+rCfNZyD/T/7FMGj03LNPiK8TRL9Sing0tq1zJF3n+W29szPqgb2RNs5oIvmm+ikeI+Q==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4599,6 +4611,10 @@ snapshots:
       levn: 0.4.1
 
   '@fastify/busboy@2.0.0': {}
+
+  '@fontsource/bungee@5.3.0': {}
+
+  '@fontsource/ma-shan-zheng@5.3.1': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

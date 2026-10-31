@@ -48,6 +48,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           upstreamSend({ type: "session.update", session: { modalities: ["text", "audio"], voice: "longanqian_v3.1", instructions: mengPoPrompt(session.locale), input_audio_format: "pcm", output_audio_format: "pcm", input_audio_transcription: { language: session.locale }, output_audio: { language: session.locale }, turn_detection: { type: "smart_turn_v2", threshold: 0.5 } } });
         } else if (event.type === "session.updated" && !ready) {
           clearTimeout(readyTimer); ready = true; readyAt = Date.now(); send({ type: "session.ready", session });
+          // Clicking start requests the opening, not a personal story. Never treat this internal item as a story source.
+          upstreamSend({ type: "conversation.item.create", item: { id: "opening_request", type: "message", role: "user", content: [{ type: "input_text", text: session.locale === "zh" ? "请用一句话向我打招呼，问我最近遇到了什么离谱事。" : "Greet me in one sentence and ask what ridiculous thing happened lately." }] } });
           upstreamSend({ type: "response.create" });
         } else if (event.type === "input_audio_buffer.speech_started") {
           cancel(); send({ type: "speech.started" });

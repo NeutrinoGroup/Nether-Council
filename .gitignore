@@ -14,3 +14,7 @@ test-results/
 .impeccable/mocks/
 .vercel
 .env*
+
+apps/web/public/worklets/capture.js
+.impeccable/questions/
+.impeccable/review/

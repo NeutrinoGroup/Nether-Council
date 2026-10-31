@@ -35,7 +35,7 @@ await new Promise<void>(resolve => {
       if (canceled) metrics.postCancelAudioChunks++;
       if (metrics.firstAudioMs < 0) {
         metrics.firstAudioMs = Math.round(performance.now() - start); canceled = true; metrics.cancelSent = true; send("response.cancel");
-        setTimeout(() => { metrics.status = "greeting_audio_and_cancel_received"; send("session.end"); ws.close(); }, 1000);
+        setTimeout(() => { metrics.status = "greeting_audio_received_cancel_sent"; send("session.end"); ws.close(); }, 1000);
       }
     }
   });
@@ -46,4 +46,4 @@ await new Promise<void>(resolve => {
 mkdirSync("artifacts/g1-voice", { recursive: true });
 writeFileSync("artifacts/g1-voice/relay-probe.json", JSON.stringify(metrics, null, 2));
 console.log(JSON.stringify(metrics, null, 2));
-if (metrics.status !== "greeting_audio_and_cancel_received") process.exitCode = 1;
+if (metrics.status !== "greeting_audio_received_cancel_sent") process.exitCode = 1;
