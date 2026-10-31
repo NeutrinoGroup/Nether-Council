@@ -1,7 +1,7 @@
-import { ServerMessage, Session, EncounterDraft, type ConfirmedTurn, type Locale } from "@nether/contracts";
+import { ServerMessage, Session, EncounterDraft, IdentityResult, type ConfirmedTurn, type Locale } from "@nether/contracts";
 import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
 import { AudioEngine } from "./audio/engine";
-export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "error" };
+export type VoiceView = { phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "error" };
 export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
   private audio = new AudioEngine();
@@ -21,6 +21,7 @@ export class VoiceClient {
   private nickname = "";
   private progressTimer?: ReturnType<typeof setInterval>;
   private startedAt = 0;
+  private result?: IdentityResult;
   private view: VoiceView = idleView;
   constructor(private notify: (view: VoiceView) => void) {}
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
@@ -41,7 +42,11 @@ export class VoiceClient {
       if (!response.ok) return this.fail(typeof body.error === "string" ? body.error : "ADMISSION_FAILED");
       const session = Session.parse(body.session);
       if (this.disposed) return;
-      this.update({ session });
+      try {
+        const cached = sessionStorage.getItem(`nc_result_${session.id}`);
+        if (cached) this.result = IdentityResult.parse(JSON.parse(cached));
+      } catch {}
+      this.update({ session, ...(this.result ? { result: this.result } : {}) });
       this.progressTimer = setInterval(() => this.refreshProgress(), 1000);
       this.deadlineTimer = setTimeout(() => this.stop("time_limit"), Math.max(0, session.captureUntil - Date.now()));
       this.connect();
@@ -99,6 +104,10 @@ export class VoiceClient {
         if (this.canceled.has(translation.responseId)) return;
         if (translation.speaker === "user") this.update({ userCaption: applyTranslation(this.view.userCaption, translation) });
         else this.update({ caption: applyTranslation(this.view.caption, translation) });
+      } else if (event.type === "result") {
+        this.result = event.result;
+        try { sessionStorage.setItem(`nc_result_${event.result.sessionId}`, JSON.stringify(event.result)); } catch {}
+        this.update({ result: event.result, finalizing: false });
       } else if (event.type === "error") {
         if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
       }
@@ -141,7 +150,12 @@ export class VoiceClient {
     const elapsed = Math.max(0, Date.now() - (this.view.session?.createdAt ?? Date.now()));
     this.update({ ...encounterProgress(this.turns, elapsed), elapsedSeconds: Math.floor(elapsed / 1000) });
   }
-  finish() { if (this.view.canClaim) this.stop("claim"); }
+  finish() {
+    if (this.view.canClaim) {
+      this.send({ type: "session.finalize" });
+      this.stop("claim");
+    }
+  }
   private fail(error: string) { this.stop("error"); this.update({ phase: "error", error }); }
   stop(reason: NonNullable<VoiceView["endReason"]> = "user") {
     if (this.disposed) return;
@@ -153,6 +167,6 @@ export class VoiceClient {
     this.send({ type: "session.end" }); this.disposed = true; this.ready = false;
     this.abort.abort(); clearInterval(this.progressTimer); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.connectionTimer);
     this.socket?.close(); this.audio.stop();
-    this.update({ phase: "ended", caption: undefined, userCaption: undefined, draft, endReason: reason });
+    this.update({ phase: "ended", caption: undefined, userCaption: undefined, draft, result: this.result, finalizing: false, endReason: reason });
   }
 }

@@ -68,3 +68,16 @@
 - `pnpm test:e2e` 桌面／手机视口 14 项通过：保留此前十项，并验证双语字幕在播放期间补齐、翻译失败保留原文、故事收尾和切换语言不自动开启新付费连接。输入是浏览器合成麦克风与应用协议夹具，不算真人／实体手机或完整 G3 验收。
 - 真实 `qwen3.6-flash` 翻译四条合成文本，中文到英文 620／682ms，英文到中文 430／638ms；4/4 首次成功。报告 `artifacts/g3-captions/text-smoke.json`。不据此宣布 P95 或语音／字幕整体 SLO 达标。
 - T11/T12、真人中英内容质量与第二台设备扫码链路仍未完成；本轮没有新增角色或生成素材。
+
+## G3 T11/T12 身份评价与 Canvas 卡片分享（2026-11-01）
+
+- PR #13（`c976fe2`）已合入 main，完成 T09/T10。从 main 创建分支 `feat/encounter-verdict-card` 推进 T11/T12。
+- T11：实现服务端基于 `qwen3.6-flash` 的双语身份评价生成器（`generator.ts`）及 `/api/verdict` 接口。严格按照 `ResultContent`（`title`、`verdict`、`warmClosing`、`tags`、`sourceTurnIds`）进行运行时 Zod 校验，并通过 `validateResultSources` 确保引用的用户话轮确实属于真实故事话轮，无故事时抛出 `NO_STORY` 拒绝伪造。在 WebSocket 协议层面支持 `session.finalize`，并通过全双工上游通道向孟婆注入 `conversation.item.create` 携带 `warmClosing`，完成暖心口播收尾。客户端使用 `sessionStorage` 记录首份结果，防止重复刷新开奖。
+- T12：实现 1080×1440 高分辨率 Canvas 身份卡生成器（`canvas.ts`）与 `<IdentityCard />` 交互组件。绘制前等待 `document.fonts.ready`，使用打包字体 `@fontsource/ma-shan-zheng` 与 `@fontsource/bungee`。支持随时勾选“隐去具体经历评价”、即时修改卡片称呼。集成 `qrcode` 生成带充足留白静区的高对比度二维码，指向包含活动凭证与 7 天签名推荐来源（`/api/referrals`）的真实入口。提供 PNG 下载、复制个性化分享文案、复制邀请链接以及系统分享（Web Share API），全链路触发匿名遥测事件。
+- 质量验证：
+  - `pnpm lint`：0 错误，0 警告。
+  - `pnpm typecheck`：全项目类型检查 100% 通过。
+  - `pnpm test`：全部 12 个测试套件、41 项 Vitest 单元与集成测试通过（包括 `verdict.test.ts` 与 `card.test.ts`）。
+  - `pnpm test:e2e`：全部 16 项 Playwright 跨视口端到端测试通过（涵盖桌面与移动端的身份卡生成、隐去评价、修改昵称、PNG 下载与文案复制）。
+  - 视觉产物捕获至 `.impeccable/review/desktop-verdict-card.png` 与 `mobile-verdict-card.png`。
+
