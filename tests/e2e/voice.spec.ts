@@ -107,3 +107,64 @@ test("retryable upstream failure survives a normal close and reconnects", async 
   await page.getByRole("button", { name: "End conversation", exact: true }).click();
   await expect(page.getByText("Conversation ended", { exact: true })).toBeVisible();
 });
+
+test("two story turns enable ending; asynchronous bilingual captions preserve live audio", async ({ page }, info) => {
+  const now = Date.now(); let socket: WebSocketRoute; let seq = 0; const messages: Record<string, unknown>[] = [];
+  const session = { id, characterId: "meng-po", locale: "zh", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  const send = (event: object) => socket.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }));
+  await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.routeWebSocket("**/api/ws", ws => { socket = ws; ws.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); }); });
+  await page.goto("/play?invite=fixture&lang=zh");
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
+  await page.getByLabel("怎么称呼你？（选填）").fill("南瓜 Alex");
+  await page.getByRole("button", { name: "开麦，找孟婆聊聊" }).click();
+  await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(2);
+  const source = { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "zh", sourceText: "今天开了五场会，工作一点没动。", speaker: "user", final: true };
+  send({ type: "caption", caption: source });
+  send({ type: "caption", caption: { ...source, responseId: "u2", segmentId: "u2", sourceText: "最后一场会开到了半夜。" } });
+  const character = { ...source, speaker: "character", responseId: "reply", segmentId: "reply", sourceText: "五场会熬成一碗南瓜汤，半夜那场负责加班添火。今晚先把会议纪要放下吧。" };
+  send({ type: "response.started", responseId: "reply" });
+  send({ type: "caption", caption: character });
+  const pcm = Buffer.alloc(24000 * 2 * 4);
+  for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 15) * 3000), i * 2);
+  for (let offset = 0; offset < pcm.length; offset += 24000) send({ type: "audio.delta", responseId: "reply", audio: pcm.subarray(offset, offset + 24000).toString("base64") });
+  await expect(page.locator(".translated-caption").filter({ hasText: "正在翻译…" }).first()).toBeVisible();
+  await expect.poll(() => page.locator(".character-stage").getAttribute("data-mouth-level").then(Number)).toBeGreaterThan(0);
+  send({ type: "caption.translation", translation: { ...character, status: "ready", translatedText: "Five meetings simmered into pumpkin soup. The midnight meeting kept the fire going. Put down those meeting notes for tonight." } });
+  send({ type: "caption.translation", translation: { ...source, responseId: "u2", segmentId: "u2", sourceText: "最后一场会开到了半夜。", status: "unavailable" } });
+  await expect(page.getByText("Five meetings simmered", { exact: false })).toBeVisible();
+  await expect(page.locator(".translated-caption").filter({ hasText: "译文暂不可用，原文仍可阅读。" })).toBeVisible();
+  await expect(page.getByText("这段奇遇，可以收好了。", { exact: false })).toBeVisible();
+  const claim = page.getByRole("button", { name: "收好故事", exact: true }); await expect(claim).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  if (info.project.name === "mobile") { const rect = await claim.boundingBox(); expect(rect!.y + rect!.height).toBeLessThanOrEqual(info.project.use.viewport!.height); }
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: `.impeccable/review/${info.project.name}-encounter.png`, fullPage: true });
+  if (info.project.name === "mobile") {
+    await page.locator(".encounter-progress").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: ".impeccable/review/mobile-encounter-detail.png", fullPage: true });
+  }
+  await claim.click(); await expect(page.getByText("南瓜 Alex，故事已收好。", { exact: true })).toBeVisible();
+  await expect(page.getByText("故事仅保留在本页。", { exact: false })).toBeVisible();
+  expect(messages.some(e => e.type === "session.end")).toBe(true);
+});
+
+test("language switch ends the current conversation and waits for a fresh start gesture", async ({ page }) => {
+  let admissions = 0; const messages: Record<string, unknown>[] = [];
+  await page.route("**/api/sessions", route => { admissions++; const now = Date.now(); return route.fulfill({ json: { session: { id, characterId: "meng-po", locale: "zh", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 } } }); });
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.routeWebSocket("**/api/ws", ws => { ws.onMessage(raw => messages.push(JSON.parse(String(raw)))); });
+  await page.goto("/play?invite=fixture&lang=zh");
+  await page.getByRole("button", { name: "开麦，找孟婆聊聊" }).click();
+  await expect.poll(() => messages.some(e => e.type === "session.start")).toBe(true);
+  await page.getByRole("button", { name: "结束当前对话并切换为英语" }).click();
+  await expect(page.getByRole("heading", { name: "Meng Po", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeEnabled();
+  expect(messages.some(e => e.type === "session.end")).toBe(true); expect(admissions).toBe(1);
+  const captured = messages.filter(e => e.type === "audio.append").length;
+  await page.waitForTimeout(300); expect(messages.filter(e => e.type === "audio.append")).toHaveLength(captured);
+  const examples = page.locator(infoMobile(page) ? ".mobile-opening-lines li" : ".story-examples li"); expect(await examples.count()).toBe(3);
+});
+
+function infoMobile(page: import("@playwright/test").Page) { return (page.viewportSize()?.width ?? 1440) <= 640; }

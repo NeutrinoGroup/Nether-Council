@@ -15,6 +15,14 @@ export type Session = z.infer<typeof Session>;
 export const Character = z.strictObject({ id: CharacterId, name: Localized, introduction: Localized, enabled: z.boolean(), modelUrl: z.string().startsWith("/models/").optional(), posterUrl: z.string().startsWith("/posters/").optional() });
 export const Caption = z.strictObject({ sessionId: Id, epoch: z.number().int().nonnegative(), responseId: z.string().max(160), segmentId: z.string().max(160), revision: z.number().int().nonnegative(), speaker: z.enum(["user", "character"]), sourceLocale: Locale, sourceText: z.string().max(3000), translatedText: z.string().max(3000).optional(), final: z.boolean() });
 export type Caption = z.infer<typeof Caption>;
+export const CaptionTranslation = Caption.omit({ translatedText: true }).extend({
+  final: z.literal(true), status: z.enum(["ready", "unavailable"]), translatedText: z.string().min(1).max(3000).optional(),
+}).refine(t => t.status === "ready" ? t.translatedText !== undefined : t.translatedText === undefined, "Invalid translation status");
+export type CaptionTranslation = z.infer<typeof CaptionTranslation>;
+export const ConfirmedTurn = z.strictObject({ id: z.string().min(1).max(160), speaker: z.enum(["user", "character"]), locale: Locale, text: z.string().min(1).max(600), revision: z.number().int().nonnegative() });
+export type ConfirmedTurn = z.infer<typeof ConfirmedTurn>;
+export const EncounterDraft = z.strictObject({ sessionId: Id, characterId: CharacterId, locale: Locale, nickname: z.string().max(48), createdAt: z.number().int(), endedAt: z.number().int(), turns: z.array(ConfirmedTurn).min(1).max(16) });
+export type EncounterDraft = z.infer<typeof EncounterDraft>;
 const boundedPair = (zh: number, en: number) => z.strictObject({ zh: z.string().min(1).max(zh), en: z.string().min(1).max(en) });
 export const ResultContent = z.strictObject({ title: boundedPair(18, 64), verdict: boundedPair(60, 180), warmClosing: boundedPair(50, 160), tags: z.array(boundedPair(10, 28)).min(2).max(3), sourceTurnIds: z.array(z.string().min(1).max(160)).min(1).max(8) });
 export type ResultContent = z.infer<typeof ResultContent>;
@@ -38,7 +46,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.strictObject({ ...envelope, type: z.literal("speech.started") }),
   z.strictObject({ ...envelope, type: z.literal("audio.delta"), responseId: z.string().max(160), audio: pcmBase64 }),
   z.strictObject({ ...envelope, type: z.literal("response.done"), responseId: z.string().max(160) }),
+  z.strictObject({ ...envelope, type: z.literal("response.started"), responseId: z.string().max(160) }),
   z.strictObject({ ...envelope, type: z.literal("caption"), caption: Caption }),
+  z.strictObject({ ...envelope, type: z.literal("caption.translation"), translation: CaptionTranslation }),
   z.strictObject({ ...envelope, type: z.literal("result"), result: IdentityResult }),
   z.strictObject({ ...envelope, type: z.literal("error"), error: AppError }),
   z.strictObject({ ...envelope, type: z.literal("pong") }),

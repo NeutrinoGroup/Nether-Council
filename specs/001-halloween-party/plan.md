@@ -1,14 +1,14 @@
 # 黄泉议会万圣节派对实施计划
 
-对应：[产品规范 v1.0](spec.md)；执行入口：[任务清单](tasks.md)。本文描述待实现架构，仓库当前尚无应用代码。
+对应：[产品规范 v1.0](spec.md)；执行入口：[任务清单](tasks.md)。本文保留最终目标架构，实际已实现范围与差异见 [进展](../../docs/progress.md)及 ADR；T11 以后的目录和能力仍是规划。
 
 ## 1. 技术选择
 
 | 层次 | 首版选择 | 职责 |
 | --- | --- | --- |
 | 语言与工程 | TypeScript、pnpm workspace | 一个 Web 应用；仅抽 contracts 和纯流程核心两个包 |
-| Web | Next.js App Router、React、Tailwind CSS | 手机入口、角色选择、主屏、结果和服务端路由 |
-| 状态 | Zustand＋纯 TypeScript reducer | 浏览器会话状态、主持状态、恢复和结果去重 |
+| Web | Next.js App Router、React、普通 CSS | 手机入口、角色选择、主屏、结果和服务端路由；当前界面沿用已有 CSS |
+| 状态 | VoiceClient＋React、纯 TypeScript 流程函数 | 浏览器会话状态、恢复与去重；当前不引入 Zustand |
 | 3D | Three.js、React Three Fiber、Drei | 加载预生成 GLB、灯光、角色动作和实际播放音量驱动嘴部 |
 | 实时语音 | `qwen-audio-3.1-realtime-plus`，原生 WS 协议 | 每个浏览器当前角色一个上游会话 |
 | 翻译与结果 | 千问文字 API，默认 `qwen3.6-flash` | 异步字幕翻译、双语身份结果；真实账号需单独验证可调用 |
@@ -190,6 +190,7 @@ Vercel WS 需要 Fluid Compute，连接受 Function 时限约束，重连不保�
 
 ## 6. 翻译和身份生成
 
+- T09/T10 的实现边界见 [ADR 0003](../../docs/adr/0003-encounter-and-bilingual-captions.md)：本轮收尾只形成页面内存草稿，T11/T12 尚未提供身份、口播或卡片。草稿不是服务端可信证据，后续生成须重新验证。
 - 服务端只把确认的短文本句段发给文字模型翻译；队列按 sessionId/epoch/responseId/segmentId 关联，限制并发和输出长度。
 - 主屏翻译双方的有效话语。原文流式显示，译文句级补齐，明确为翻译字幕，不承诺字级同传。
 - 翻译任务最多积压两个未完成句段；超时／失败有一次有界重试，过期任务取消。回复和场景永远不等待翻译。
@@ -237,7 +238,7 @@ Vercel WS 需要 Fluid Compute，连接受 Function 时限约束，重连不保�
 
 ## 10. 检查、测试和 eval
 
-待实现命令如下；当前没有 `package.json`，不能把这些名称当成已经可执行。
+已有命令以 `package.json` 为准。以下同时包含后续规划；`eval` 和 `test:load` 尚未提供，不能当成已通过验证。
 
 | 命令 | 职责 |
 | --- | --- |

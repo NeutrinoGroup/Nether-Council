@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { normalizeNickname } from "@nether/party-core";
+import { BilingualCaption } from "../captions/BilingualCaption";
 import type { Locale } from "@nether/contracts";
 import { idleView, VoiceClient, type VoiceView } from "./client";
 import { CharacterStage } from "../world3d/CharacterStage";
@@ -20,13 +22,14 @@ const serverSnapshot = () => false;
 export function VoiceTrial({ initialLocale, invite, referral }: { initialLocale: Locale; invite: string; referral?: string }) {
   const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot);
   const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [nickname, setNickname] = useState("");
   const [view, setView] = useState<VoiceView>(idleView);
   const client = useRef<VoiceClient | null>(null);
   const band = useRef<HTMLDivElement>(null);
   const t = words[locale];
   const active = !["idle", "ended", "error"].includes(view.phase);
   useEffect(() => {
-    const onHidden = () => { if (document.hidden) client.current?.stop(); };
+    const onHidden = () => { if (document.hidden) client.current?.stop("background"); };
     document.addEventListener("visibilitychange", onHidden);
     return () => { document.removeEventListener("visibilitychange", onHidden); client.current?.stop(); };
   }, []);
@@ -42,28 +45,37 @@ export function VoiceTrial({ initialLocale, invite, referral }: { initialLocale:
     return () => cancelAnimationFrame(frame);
   }, []);
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
+  const changeLocale = (next: Locale) => {
+    if (next === locale) return;
+    client.current?.stop("language_change"); client.current = null;
+    setView({ ...idleView }); setLocale(next);
+  };
   const start = () => {
     if (!invite) return;
     client.current?.stop();
     const next = new VoiceClient(setView); client.current = next;
-    void next.start(locale, invite, referral);
+    const name = normalizeNickname(nickname); setNickname(name);
+    void next.start(locale, invite, referral, name);
   };
   return <main className="party-shell" data-active={active} lang={locale === "zh" ? "zh-CN" : "en"}>
-    <header className="party-nav"><span className="brand">{t.home}</span><span>{locale === "zh" ? "今晚的奇遇" : "Tonight’s encounter"}</span></header>
+    <header className="party-nav"><span className="brand">{t.home}</span><div className="nav-encounter"><span>{locale === "zh" ? "今晚的奇遇" : "Tonight’s encounter"}</span>{active && <button className="locale-reset" onClick={() => changeLocale(locale === "zh" ? "en" : "zh")} aria-label={locale === "zh" ? "结束当前对话并切换为英语" : "End this conversation and switch to Chinese"}>{locale === "zh" ? "English" : "中文"}</button>}</div></header>
     <div className="voice-layout" tabIndex={0} aria-label={locale === "zh" ? "对话与准备" : "Conversation and setup"}>
       <section className="conversation" aria-labelledby="character-name">
         <div className="character-heading"><h1 id="character-name" className={locale === "zh" ? "han-display" : "latin-display"}>{t.title}</h1><p>{t.role}</p></div>
         <CharacterStage locale={locale} phase={view.phase} interruptedAt={view.interruptedAt} readRms={readRms} />
         <p className="opening-line">{t.intro}</p>
         <div className="live-state" role="status"><span className={active ? "state-dot active" : "state-dot"} aria-hidden="true" />{t.states[view.phase]}{view.phase === "reconnecting" ? ` · ${view.reconnects}/3` : ""}</div>
-        <div className="caption-area"><h2>{t.caption}</h2><p className="character-caption" aria-live="polite" aria-atomic="true">{view.caption?.sourceText ?? (view.phase === "ended" ? t.ended : t.empty)}</p>
-          {view.userCaption && <div className="user-caption"><h2>{t.you}</h2><p>{view.userCaption.sourceText}</p></div>}
+        <div className="caption-area"><BilingualCaption title={t.caption} caption={view.caption} locale={locale} fallback={view.phase === "ended" ? t.ended : t.empty} />
+          {view.userCaption && <BilingualCaption title={t.you} caption={view.userCaption} locale={locale} participant />}
         </div>
+        {active && <div className="encounter-progress"><p className="encounter-clock">{Math.floor(view.elapsedSeconds / 60)}:{String(view.elapsedSeconds % 60).padStart(2, "0")} / 3:00 · {locale === "zh" ? `${view.userTurns} 次有效发言` : `${view.userTurns} story turns`}</p>{view.claimReady && <p role="status" className="claim-prompt">{locale === "zh" ? "这段奇遇，可以收好了。还想补一句，也可以继续聊。" : "You have a story worth keeping. Add one more detail, or wrap up now."}</p>}</div>}
+        {view.phase === "ended" && <div className="encounter-summary" role="status">{view.draft ? <><p>{locale === "zh" ? `${view.draft.nickname || "今晚的来宾"}，故事已收好。` : `${view.draft.nickname || "Tonight’s guest"}, your story is ready.`}</p><p>{locale === "zh" ? "故事仅保留在本页。身份生成和卡片将在后续版本开放。" : "Your story stays in this page. Identity generation and cards are coming next."}</p></> : <p>{locale === "zh" ? "还没收好一个故事。重新开麦，讲一句最近的离谱事吧。" : "No story collected yet. Start again with something ridiculous that happened lately."}</p>}{view.endReason === "time_limit" && <p>{locale === "zh" ? "三分钟到了，麦克风已关闭。" : "Three minutes are up. Your microphone is off."}</p>}</div>}
         <div className="audio-band" ref={band} aria-hidden="true">{Array.from({ length: 39 }, (_, i) => <span key={i} style={{ "--amplitude": String(0.25 + ((i * 7) % 11) / 14) } as CSSProperties} />)}</div>
       </section>
       <aside className="voice-setup" aria-label={locale === "zh" ? "开聊准备" : "Before you talk"}>
         <p className="encounter-intro">{t.invitation}</p>
-        <fieldset disabled={active}><legend>{t.choose}</legend><div className="language-switch"><label><input type="radio" name="locale" value="zh" checked={locale === "zh"} onChange={() => setLocale("zh")} />中文</label><label><input type="radio" name="locale" value="en" checked={locale === "en"} onChange={() => setLocale("en")} />English</label></div></fieldset>
+        <fieldset disabled={active}><legend>{t.choose}</legend><div className="language-switch"><label><input type="radio" name="locale" value="zh" checked={locale === "zh"} onChange={() => changeLocale("zh")} />中文</label><label><input type="radio" name="locale" value="en" checked={locale === "en"} onChange={() => changeLocale("en")} />English</label></div></fieldset>
+        <div className="nickname-field"><label htmlFor="nickname">{locale === "zh" ? "怎么称呼你？（选填）" : "What should we call you? (optional)"}</label><input id="nickname" autoComplete="off" maxLength={48} value={nickname} disabled={active} onChange={event => setNickname(event.target.value)} onBlur={() => setNickname(normalizeNickname(nickname))} aria-describedby="nickname-hint" /><p id="nickname-hint">{locale === "zh" ? "最多 24 个字符，仅用于本页称呼，不发送给神仙。" : "Up to 24 characters. Kept in this page; never sent to the character."}</p></div>
         <section className="story-examples"><h2>{t.topic}</h2><ul>{t.examples.map(example => <li key={example}>{example}</li>)}</ul></section>
         <details className="mobile-opening-lines"><summary>{t.topic}</summary><ul>{t.examples.map(example => <li key={example}>{example}</li>)}</ul></details>
         <p className="talk-hint">{t.hint}</p>
@@ -74,7 +86,7 @@ export function VoiceTrial({ initialLocale, invite, referral }: { initialLocale:
       </aside>
     </div>
     <footer className="voice-actions">
-      {!active ? <button className="start-button" onClick={start} disabled={!invite || !hydrated}>{t.start}<MicIcon /></button> : <div className="live-controls"><button onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>{view.muted ? t.unmute : t.mute}</button><button onClick={() => client.current?.interrupt()} disabled={view.phase !== "speaking"}>{t.interrupt}</button><button className="stop-button" onClick={() => client.current?.stop()}>{t.stop}</button></div>}
+      {!active ? <button className="start-button" onClick={start} disabled={!invite || !hydrated}>{t.start}<MicIcon /></button> : <div className="live-controls">{view.canClaim && <button className={view.claimReady ? "claim-button ready" : "claim-button"} onClick={() => client.current?.finish()}>{locale === "zh" ? "收好故事" : "Keep my story"}</button>}<button onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>{view.muted ? t.unmute : t.mute}</button><button onClick={() => client.current?.interrupt()} disabled={view.phase !== "speaking"}>{t.interrupt}</button><button className="stop-button" onClick={() => client.current?.stop()}>{t.stop}</button></div>}
       <p>{t.trial}</p>
     </footer>
   </main>;
