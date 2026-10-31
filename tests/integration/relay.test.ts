@@ -41,6 +41,11 @@ test("bridge keeps uploading while speaking; barge-in drops old audio and closes
   await waitFor(() => received.some(e => e.type === "audio.delta" && e.responseId === "b") || received.some(e => e.type === "error"));
   expect(received.some(e => e.type === "error")).toBe(false);
   expect(received.some(e => e.type === "audio.delta" && e.responseId === "b")).toBe(true);
+  // A delayed cancel from the previous audible response cannot stop the new response.
+  client.send(JSON.stringify({ ...envelope(2), type: "response.cancel", responseId: "a" }));
+  client.send(JSON.stringify({ ...envelope(3), type: "ping" }));
+  await waitFor(() => received.some(e => e.type === "pong"));
+  expect(upstreamMessages.filter(e => e.type === "response.cancel")).toHaveLength(1);
   // The same generic error code for a different problem must still fail closed.
   remote!.send(JSON.stringify({ type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Unsupported voice.", param: "session.voice" } }));
   await waitFor(() => received.some(e => e.type === "error"));

@@ -29,7 +29,7 @@ pnpm test:e2e
 
 ```bash
 pnpm env:vercel
-pnpm exec vercel deploy --regions hkg1 --local-config apps/web/vercel.json --scope oodai --non-interactive --yes
+pnpm exec vercel deploy --regions hkg1 --local-config apps/web/vercel.json --scope oodai --env APP_REVISION="$(git rev-parse HEAD)" --non-interactive --yes
 pnpm smoke --url https://nether-council.vercel.app
 pnpm probe:relay --url https://<preview-host>
 pnpm telemetry:collect --since 30m
@@ -37,6 +37,8 @@ pnpm report:pilot
 ```
 
 `env:vercel` 校验本项目 ID 后从本机配置经 stdin 上传环境变量，不打印值；可追加变量名只更新所选项。默认关闭语音，开启时必须保留签名活动邀请鉴权。项目 Git 自动部署尚未接通，现由已登录的 CLI 上传。`probe:relay` 只验证自动开场的真实音频和取消链路，不能替代真人双工验收。
+
+CLI 部署须从干净提交执行并附 `APP_REVISION`，因为未连接 Git 的部署可能没有 `VERCEL_GIT_COMMIT_SHA`。部署后可用 `pnpm smoke --url https://<deployment-host> --revision <commit>`核对实际运行版本；正式部署追加 `--prod`。
 
 日志采集依赖 Vercel 保留期与主动运行命令；分页边界、延迟、截断和未采集期间可能丢失事件。下载文件生成与系统分享唤起均不代表用户真的保存或分享，真实试场需观察记录。
 
