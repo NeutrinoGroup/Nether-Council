@@ -55,7 +55,8 @@ export class VoiceClient {
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/ws`);
     this.socket = socket;
     const current = () => !this.disposed && socket === this.socket && epoch === this.epoch;
-    this.connectionTimer = setTimeout(() => { if (current()) socket.close(); }, 20000);
+    let retryRequested = false;
+    this.connectionTimer = setTimeout(() => { if (current()) { retryRequested = true; socket.close(); } }, 20000);
     socket.onopen = () => { if (current()) this.send({ type: "session.start", ...(this.history.length ? { resumeTurns: this.history } : {}) }); };
     socket.onmessage = ({ data }) => {
       if (!current()) return;
@@ -86,16 +87,16 @@ export class VoiceClient {
         }
         this.update(caption.speaker === "user" ? { userCaption: caption } : { caption });
       } else if (event.type === "error") {
-        if (event.error.retryable) socket.close(); else this.fail(event.error.code);
+        if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
       }
       // response.done marks generation, not the end of actual scheduled playback.
     };
-    socket.onerror = () => { if (current()) socket.close(); };
+    socket.onerror = () => { if (current()) { retryRequested = true; socket.close(); } };
     socket.onclose = ({ code }) => {
       if (!current()) return;
       clearTimeout(this.connectionTimer); this.ready = false; this.audio.clear(); this.activeResponse = undefined;
       this.update({ caption: undefined });
-      if (code === 1000 || Date.now() >= session.captureUntil) return this.stop();
+      if ((code === 1000 && !retryRequested) || Date.now() >= session.captureUntil) return this.stop();
       if (this.view.reconnects >= RECONNECT_DELAYS_MS.length) return this.fail("RECONNECT_EXHAUSTED");
       const delay = RECONNECT_DELAYS_MS[this.view.reconnects] + Math.random() * 250;
       this.epoch++; this.canceled.clear();

@@ -37,7 +37,7 @@ test("three reconnects keep session identity and original capture deadline", asy
 test("previous connection callbacks cannot inject audio after reconnect or restart", async () => {
   current = new VoiceClient(() => {}); await current.start("en", "fixture");
   const old = Socket.instances[0]; old.onclose?.({ code: 1011 });
-  await vi.advanceTimersByTimeAsync(1250);
+  await vi.advanceTimersByTimeAsync(1500);
   const event = { protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "audio.delta", responseId: "late", audio: "AAA=" };
   old.onmessage?.({ data: JSON.stringify(event) }); expect(audio.play).not.toHaveBeenCalled();
   current.stop();
@@ -49,4 +49,13 @@ test("capture deadline prevents a reconnect from extending microphone use", asyn
   Socket.instances[0].onclose?.({ code: 1011 }); await vi.advanceTimersByTimeAsync(180000);
   expect(view?.phase).toBe("ended"); expect(audio.stop).toHaveBeenCalled();
   const total = Socket.instances.length; await vi.advanceTimersByTimeAsync(30000); expect(Socket.instances).toHaveLength(total);
+});
+test("retryable provider errors reconnect even when the close handshake looks normal", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; socket.onopen?.();
+  socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "error", error: { code: "UPSTREAM_UNAVAILABLE", retryable: true, message: { zh: "稍后重试", en: "Retry shortly" } } }) });
+  socket.onclose?.({ code: 1000 });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(Socket.instances).toHaveLength(2);
+  expect(view).toMatchObject({ phase: "reconnecting", reconnects: 1, session: { expiresAt: session.expiresAt } });
 });

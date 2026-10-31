@@ -82,3 +82,28 @@ test("model failure names the downgrade and keeps the voice entry available", as
   await expect(page.getByText("3D is unavailable. Voice still works.", { exact: true })).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeEnabled();
 });
+
+test("retryable upstream failure survives a normal close and reconnects", async ({ page }) => {
+  const now = Date.now(); let connections = 0;
+  const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.routeWebSocket("**/api/ws", ws => {
+    connections++; const attempt = connections;
+    ws.onMessage(raw => {
+      const event = JSON.parse(String(raw));
+      if (event.type !== "session.start") return;
+      const envelope = { protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: event.epoch, seq: 0 };
+      if (attempt === 1) {
+        ws.send(JSON.stringify({ ...envelope, type: "error", error: { code: "UPSTREAM_UNAVAILABLE", retryable: true, message: { zh: "稍后重试", en: "Retry shortly" } } }));
+        ws.close({ code: 1000, reason: "Close raced the retryable error" });
+      } else ws.send(JSON.stringify({ ...envelope, type: "session.ready", session }));
+    });
+  });
+  await page.goto("/play?invite=test-fixture&lang=en");
+  await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
+  await expect(page.getByText("Listening to you", { exact: true })).toBeVisible({ timeout: 10000 });
+  expect(connections).toBe(2);
+  await page.getByRole("button", { name: "End conversation", exact: true }).click();
+  await expect(page.getByText("Conversation ended", { exact: true })).toBeVisible();
+});
