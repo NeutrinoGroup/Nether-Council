@@ -21,23 +21,28 @@ pnpm probe:providers
 pnpm test:e2e
 ```
 
-环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。当前 `/play` 提供中／英文孟婆语音试场：实际 AudioWorklet 采集与流式播放、插话、静音和有界重连，并加载真实混元 GLB，以播放 RMS 驱动独立嘴部。需要签名邀请；身份卡和其他角色尚未开放。最新部署验证及真人、现场设备验收状态见实施进展。
+环境变量见 `.env.example`，在被忽略的 `.env` 或 `.env.local` 配置。浏览器永远不直接取得厂商密钥。
 
-本地 G3 分支增加选填昵称、三个双语开聊示例、有效故事进度与「收好故事」。两次有效发言或已有故事且满 75 秒时提示收尾；180 秒关闭麦克风，重连不延长时限。昵称最多 24 个 Unicode 字符，仅留在页面内存；收尾草稿也不写入磁盘或分享链接。切换语言结束旧连接，需再次点击开麦。T11 身份生成和 T12 卡片尚未开放。
+- **个人体验入口 (`/play`)**：开放全部 7 位角色（孟婆、黑无常、白无常、钟馗、科学怪人、狼人、吸血鬼）与中英双语选择。支持 AudioWorklet 采集、流式双工问答、即时插话（Barge-in）、双语异步字幕与 1080×1440 万圣节身份卡结算导出（PNG 下载、Web Share、免手填码推荐二维码）。
+- **现场主持大屏 (`/host`)**：现场专属大屏沉浸模式，支持 32px 超大双语字幕、Web Audio 背景音智能避让压低（~15.5dB Ducking）、全场举杯狂欢祝词（All-Hall Celebration）、一键流转下一位来宾（无串线状态重置）及现场常驻扫码二维码。
 
-确认的双方原文异步翻译，语音播放不等待文字 API。译文失败保留原文并显示状态；打断、修订、换语言和重连会使旧翻译失效。文字接口使用 `QWEN_TEXT_API_KEY`，未单独配置时沿用语音密钥，实际权限须验证。详见 [G3 流程与字幕 ADR](docs/adr/0003-encounter-and-bilingual-captions.md)。
-
-`pnpm dev` 用于界面；WS 开发使用 `pnpm dev:voice`（Vercel CLI）。正式验收仍需 HTTPS 预览及真实设备。探测命令会实际调用已配置的语音和文字接口，3D 仅查询不存在任务，不提交生成；报告不含凭据。普通 CI 不调用付费模型。
+详见以下核心文档：
+- [完整部署与运维手册](docs/deploy.md)
+- [现场主持与大屏操作手册](docs/runbooks/host-handbook.md)
+- [跨浏览器与移动端兼容性审计](docs/compatibility.md)
+- [10 客户端真实并发压测报告](artifacts/g5-pilot/load-report.md)
+- [10 人试场观察报告](docs/trials/pilot-10-report.md)
+- [50 人全景漏斗与角色复盘报告](docs/trials/pilot-50-funnel.md)
+- [已知问题与应对措施](docs/known-issues.md)
 
 ## 部署与验证
 
 ```bash
 pnpm env:vercel
-pnpm exec vercel deploy --regions hkg1 --local-config apps/web/vercel.json --scope oodai --env APP_REVISION="$(git rev-parse HEAD)" --non-interactive --yes
+pnpm exec vercel deploy --prod --regions hkg1 --local-config apps/web/vercel.json --scope oodai --non-interactive --yes
 pnpm smoke --url https://nether-council.vercel.app
-pnpm probe:relay --url https://<preview-host>
-pnpm telemetry:collect --since 30m
-pnpm report:pilot
+pnpm test:load --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
+pnpm invite:create --url https://nether-council.vercel.app --hours 2
 ```
 
 `env:vercel` 校验本项目 ID 后从本机配置经 stdin 上传环境变量，不打印值；可追加变量名只更新所选项。默认关闭语音，开启时必须保留签名活动邀请鉴权。项目 Git 自动部署尚未接通，现由已登录的 CLI 上传。`probe:relay` 只验证自动开场的真实音频和取消链路，不能替代真人双工验收。
