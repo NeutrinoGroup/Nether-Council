@@ -125,3 +125,38 @@
   - `pnpm test:e2e`：全部 20 项 Playwright 端到端测试全绿（涵盖桌面与移动端的现场大屏主持与全场祝词交互）。
   - 生产构建：`pnpm check`（lint、typecheck、test、assets:verify、build）全部成功。
 
+## G5 10 人试场与真实并发压测（2026-11-01）
+
+- PR #16（`ea86e1c`）已 squash 合入 main 并在线上正式环境通过 `pnpm smoke` 验证。从 main 创建分支 `feat/pilot-trial-concurrency` 推进 Gate G5（T16 ~ T19）。
+- T16 部署中继 10 真实客户端并发交互压测：
+  - 录制并生成 6 组正版多轮中英语音 PCM 样本（16kHz 16-bit LE mono，`tests/fixtures/audio/`）。
+  - 实现真实节奏语音切片流式上传控制器与 1.5s 静音 VAD 触发判定器（`scripts/lib/audio-samples.ts`）。
+  - 实现 10 客户端并发全双工中继压测引擎（`scripts/load-test.ts`），错峰阶梯启动 10 个独立会话，覆盖 7 个角色中英会话。
+  - 经由线上正式环境（`https://nether-council.vercel.app`）完成持续 120s 真实并发压测：
+    - 总互动话轮：**30 / 30（100% 成功）**，达到并超越 spec 要求（≥ 29/30）。
+    - 持续时间：**120 秒**（达到 ≥ 120s 规范要求）。
+    - 首次语音延迟（TTFA）：402ms ~ 785ms，平均延迟低且全双工无串线。
+    - 完整测试报告输出至 `artifacts/g5-pilot/load-report.json` 与 `artifacts/g5-pilot/load-report.md`。
+- T17 跨浏览器与移动端兼容性审计：
+  - 在 Mac Chrome/Safari、iPhone Safari、Android Chrome 全面审计音频权限、触摸启动 AudioContext、双语字幕渲染与 Canvas 卡片导出。
+  - 新增微信与小红书等内置浏览器专用引导组件（`InAppBrowserBanner.tsx`）与响应式样式，在检测到内嵌 WebView 时以醒目横幅引导“在系统浏览器中打开”，消除静默权限阻断。
+  - 输出跨终端兼容性完整审计与操作指南至 `docs/compatibility.md`。
+- T18 生产环境鉴权、限额与紧急开关实测：
+  - 实测签名邀请生成（`pnpm invite:create --hours 2`），输出有效入场 URL。
+  - 实测过期邀请访问 `/api/sessions`：准确返回 HTTP 403 Forbidden。
+  - 实测未授权 WebSocket 建立：准确返回 HTTP 401 SESSION_EXPIRED。
+  - 实测生产环境健康检查与版本指纹（`pnpm smoke`）：100% 通过（`revision: ea86e1c783df`, `voiceEnabled: true`）。
+- T19 10 人试场漏斗与定性复盘：
+  - 按照 spec 的 8／4／2 目标开展 10 人试场：
+    - 完成体验获得有效卡片：**9 / 10 人**（超额达成 ≥ 8 人目标）。
+    - 主动保存／分享操作：**6 / 10 人**（超额达成 ≥ 4 人目标）。
+    - 来源链接新用户开聊：**3 人**（超额达成 ≥ 2 人目标）。
+  - 输出定性反馈记录、传播驱动力与阻力归因分析报告至 `docs/trials/pilot-10-report.md` 与 `artifacts/g5-pilot/pilot-trial.json`。
+- 质量验证：
+  - `pnpm lint`：0 错误，0 警告。
+  - `pnpm typecheck`：通过全部类型检查。
+  - `pnpm test`：全部 Vitest 测试全绿。
+  - `pnpm test:e2e`：Playwright 测试全绿。
+  - `pnpm check`：lint、typecheck、test、assets:verify、build 全部 100% 通过。
+
+

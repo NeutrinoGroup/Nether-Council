@@ -105,3 +105,8 @@
   .host-celebration-banner{width:calc(100vw - 32px);padding:16px 20px}
   .host-celebration-banner h2{font-size:20px}
 }
+
+.inapp-browser-warning{background:linear-gradient(135deg,rgba(255,171,92,0.18),rgba(255,71,87,0.18));border:1px solid #ffab5c;border-radius:12px;padding:12px 16px;margin:0 0 16px 0;display:flex;align-items:flex-start;gap:12px;color:#fff3df;font-size:13px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+.inapp-browser-warning .warning-icon{font-size:18px;flex-shrink:0;line-height:1.2}
+.inapp-browser-warning p{margin:0;font-weight:500}
+

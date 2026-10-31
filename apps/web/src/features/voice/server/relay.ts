@@ -72,10 +72,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const captureTimer = setTimeout(() => { cancel(); shutdown(1000, "Capture limit reached"); }, Math.max(1, session.captureUntil - Date.now()));
 
     const openUpstream = (resumeTurns: { role: "user" | "assistant"; text: string }[] = []) => {
-      readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 15000);
+      readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 25000);
       const url = new URL(config.realtimeUrl);
       url.searchParams.set("model", config.realtimeModel);
-      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 12_000, family: 4, maxPayload: 1_048_576 });
+      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 20_000, family: 4, maxPayload: 1_048_576 });
 
       upstream.on("unexpected-response", (_, response) => { response.resume(); diagnostic("handshake", response.statusCode); fail("UPSTREAM_UNAVAILABLE"); });
       upstream.on("error", error => { if (!closed) { diagnostic("transport", error.message === "Opening handshake has timed out" ? "HANDSHAKE_TIMEOUT" : "code" in error ? String(error.code) : undefined); fail("UPSTREAM_UNAVAILABLE"); } });

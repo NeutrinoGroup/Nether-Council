@@ -5,8 +5,11 @@ import { deduplicate } from "./lib/telemetry";
 const flag = process.argv.indexOf("--since");
 const since = flag >= 0 ? process.argv[flag + 1] : "30m";
 if (!since) throw new Error("--since requires a duration");
-const result = spawnSync("pnpm", ["exec", "vercel", "logs", "--json", "--project", "nether-council", "--scope", "oodai", "--since", since, "--limit", "1000", "--non-interactive"], { encoding: "utf8", timeout: 45000 });
-if (result.status !== 0) throw new Error("Vercel runtime log query failed");
+const result = spawnSync("pnpm", ["exec", "vercel", "logs", "--json", "--project", "nether-council", "--since", since, "--limit", "1000"], { encoding: "utf8", timeout: 45000 });
+if (result.status !== 0) {
+  console.error(result.stderr);
+  throw new Error("Vercel runtime log query failed");
+}
 const events: TelemetryEvent[] = [];
 function visit(value: unknown) {
   if (typeof value === "string" && value.includes('"nether.telemetry"')) {
