@@ -1,0 +1,2 @@
+export const CAPTURE_LIMIT_MS = 180_000;
+export const CONNECTION_LIMIT_MS = 235_000;
