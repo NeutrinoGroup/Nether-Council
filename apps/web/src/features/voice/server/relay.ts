@@ -99,7 +99,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       if (event.type === "session.end") return shutdown();
       if (event.type === "ping") return send({ type: "pong" });
       if (!ready) return fail("INVALID_MESSAGE");
-      if (event.type === "response.cancel") return cancel();
+      if (event.type === "response.cancel") {
+        if (event.responseId !== undefined && event.responseId !== activeResponse) return;
+        return cancel();
+      }
       if (event.type === "session.finalize") { cancel(); return shutdown(1000, "Result generation not available yet"); }
       if (event.type === "audio.append") {
         if (Date.now() >= session.captureUntil) return shutdown();

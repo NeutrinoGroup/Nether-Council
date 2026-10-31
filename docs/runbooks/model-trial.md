@@ -11,3 +11,5 @@
 匿名报告存本机 `artifacts/g2-model/device-YYYYMMDD.json`：版本、URL、设备、浏览器、两分钟持续时间、模型加载、FPS 分布、资源趋势、语音同步／停播结论、错误。不要包含邀请凭据、音频或私人故事。只有目标 Mac 与手机均有记录且达标后，才勾选 T08。
 
 已有自动化基线：arm64 Mac、无头 Chromium 156、SwiftShader，121101ms 待机，FPS 最低 19.4／中位 38.8；它没有证明实体设备性能达标。
+
+本机 Chrome 实际 GPU 待机基线：macOS 15.7.5、Apple M4 Metal、Chrome 156.0.8078.74，120348ms；FPS 最低 40.5／中位 60.0。该项仍不包含常规语音互动和实体手机。
