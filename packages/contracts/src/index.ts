@@ -33,9 +33,24 @@ export const ErrorCode = z.enum(["INVALID_MESSAGE", "SESSION_MISMATCH", "SESSION
 export const AppError = z.strictObject({ code: ErrorCode, retryable: z.boolean(), message: Localized });
 const envelope = { protocolVersion: z.literal(1), eventId: Id, sessionId: Id, epoch: z.number().int().nonnegative(), seq: z.number().int().nonnegative() };
 const pcmBase64 = z.string().min(4).max(60_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+export const UiAction = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("change_mood"), data: z.strictObject({ mood: z.enum(["calm", "warm", "storm", "laughing", "angry_support", "mystical", "healing"]) }) }),
+  z.strictObject({ action: z.literal("extract_worry"), data: z.strictObject({ worry: z.string().min(1).max(160) }) }),
+  z.strictObject({ action: z.literal("finish_ritual"), data: z.strictObject({ blessing: z.string().min(1).max(160) }) }),
+]);
+export type UiAction = z.infer<typeof UiAction>;
+export const SoulMood = z.enum(["laughing", "angry_support", "mystical", "healing"]);
+export type SoulMood = z.infer<typeof SoulMood>;
+export const SoulAction = z.discriminatedUnion("name", [
+  z.strictObject({ name: z.literal("change_mood"), arguments: z.strictObject({ mood: SoulMood }) }),
+  z.strictObject({ name: z.literal("extract_worry_keyword"), arguments: z.strictObject({ keyword: z.string().trim().min(1).max(24) }) }),
+  z.strictObject({ name: z.literal("trigger_soul_soup_ritual"), arguments: z.strictObject({ blessing_quote: z.string().trim().min(1).max(60) }) }),
+]);
+export type SoulAction = z.infer<typeof SoulAction>;
 export const ClientMessage = z.discriminatedUnion("type", [
-  z.strictObject({ ...envelope, type: z.literal("session.start"), resumeTurns: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().min(1).max(600) })).max(4).optional(), prewarm: z.boolean().optional() }),
+  z.strictObject({ ...envelope, type: z.literal("session.start"), resumeTurns: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().min(1).max(600) })).max(4).optional(), prewarm: z.boolean().optional(), resumeUserTurns: z.number().int().min(0).max(16).optional(), ritualCompleted: z.boolean().optional() }),
   z.strictObject({ ...envelope, type: z.literal("audio.append"), audio: pcmBase64 }),
+  z.strictObject({ ...envelope, type: z.literal("text.submit"), text: z.string().trim().min(1).max(600) }),
   z.strictObject({ ...envelope, type: z.literal("response.cancel"), responseId: z.string().max(160).optional(), playedMs: z.number().int().nonnegative().max(235_000).optional() }),
   z.strictObject({ ...envelope, type: z.literal("session.finalize") }),
   z.strictObject({ ...envelope, type: z.literal("session.end") }),
@@ -43,8 +58,11 @@ export const ClientMessage = z.discriminatedUnion("type", [
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export const ServerMessage = z.discriminatedUnion("type", [
+  z.strictObject({ ...envelope, type: z.literal("soul.action"), responseId: z.string().min(1).max(160), callId: z.string().min(1).max(160), action: SoulAction }),
+  z.strictObject({ ...envelope, type: z.literal("UI_ACTION"), responseId: z.string().min(1).max(160), callId: z.string().min(1).max(160), payload: UiAction }),
   z.strictObject({ ...envelope, type: z.literal("session.ready"), session: Session }),
   z.strictObject({ ...envelope, type: z.literal("speech.started") }),
+  z.strictObject({ ...envelope, type: z.literal("speech.stopped") }),
   z.strictObject({ ...envelope, type: z.literal("audio.delta"), responseId: z.string().max(160), audio: pcmBase64 }),
   z.strictObject({ ...envelope, type: z.literal("response.done"), responseId: z.string().max(160) }),
   z.strictObject({ ...envelope, type: z.literal("response.started"), responseId: z.string().max(160) }),
