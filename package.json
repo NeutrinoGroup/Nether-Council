@@ -24,7 +24,11 @@
     "report:pilot": "tsx scripts/report-pilot.ts",
     "invite:create": "tsx scripts/create-invite.ts",
     "assets:verify": "tsx scripts/verify-assets.ts",
-    "assets:prepare:meng-po": "tsx scripts/prepare-meng-po.ts"
+    "assets:prepare:meng-po": "tsx scripts/prepare-meng-po.ts",
+    "dev:gateway": "tsx scripts/dev-gateway.ts",
+    "verify:voice-gateway": "tsx scripts/verify-voice-gateway.ts",
+    "test:voice": "uv run --project services/voice --frozen pytest services/voice/tests -q",
+    "test:e2e:realtime": "playwright test --config playwright.realtime.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",

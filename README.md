@@ -58,3 +58,5 @@ CLI 部署须从干净提交执行并附 `APP_REVISION`，因为未连接 Git �
 已提交 1.26 MiB 自包含 GLB 与生成海报，来源及精确哈希见 [资产清单](docs/assets/meng-po.source.json)。单网格无面部绑定，使用独立嘴部；眼睛静态。3D 加载失败会明确显示海报提示，语音可独立工作。
 
 `pnpm assets:verify` 校验哈希、8 MiB 大小限制和 2K 贴图；包含于 `pnpm check`。需要复现优化时执行 `pnpm assets:prepare:meng-po --input /absolute/path/original.glb`，输入须匹配来源清单中的原始哈希。该命令不调用付费生成。Mac 与手机两分钟验收方法见 [模型试场手册](docs/runbooks/model-trial.md)。
+
+实时语音网关与断线演示：参见 [FastAPI 服务](services/voice/README.md) 和 [Demo 排练步骤](docs/runbooks/realtime-demo.md)。

@@ -43,6 +43,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.11.13"
+          python-version: "3.12"
+          enable-cache: false
+      - run: uv sync --project services/voice --frozen
+      - run: pnpm test:voice
+      - run: pnpm verify:voice-gateway
       - run: pnpm check
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

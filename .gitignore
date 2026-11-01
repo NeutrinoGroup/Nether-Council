@@ -25,3 +25,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 supabase/.temp/
+
+# Isolated realtime browser verification build
+apps/web/.next-realtime/
