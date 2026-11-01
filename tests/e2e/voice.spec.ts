@@ -51,8 +51,7 @@ test("worklet uploads during playback; interruption, mute, isolation and stop wo
       if (event.type === "session.start") send({ type: "session.ready", session });
     });
   });
-  await page.goto("/?invite=test-fixture&lang=en");
-  await page.getByRole("link", { name: "Step inside. Meet Meng Po" }).click();
+  await page.goto("/play?invite=test-fixture&lang=en");
   await expect(page).toHaveURL(/\/play\?.*invite=test-fixture/);
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
