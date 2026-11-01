@@ -28,3 +28,35 @@ export function pcm16le(samples: Int16Array): ArrayBuffer {
   for (let i = 0; i < samples.length; i++) view.setInt16(i * 2, samples[i], true);
   return buffer;
 }
+
+/** Bounded PCM queue rendered on the audio thread, including 24k -> device-rate conversion. */
+export class PlaybackQueue {
+  private samples: Float32Array;
+  private read = 0;
+  private write = 0;
+  private size = 0;
+  private fraction = 0;
+  consumed = 0;
+  constructor(private outputRate: number, private inputRate = 24000, seconds = 12) {
+    this.samples = new Float32Array(inputRate * seconds);
+  }
+  push(input: Float32Array) {
+    if (input.length > this.samples.length - this.size) throw new Error("PLAYBACK_BACKLOG");
+    for (const value of input) { this.samples[this.write] = value; this.write = (this.write + 1) % this.samples.length; }
+    this.size += input.length;
+  }
+  render(output: Float32Array) {
+    output.fill(0);
+    const step = this.inputRate / this.outputRate;
+    for (let i = 0; i < output.length && this.size > 0; i++) {
+      const a = this.samples[this.read];
+      const b = this.size > 1 ? this.samples[(this.read + 1) % this.samples.length] : a;
+      output[i] = a + (b - a) * this.fraction;
+      this.fraction += step;
+      const take = Math.min(this.size, Math.floor(this.fraction));
+      this.read = (this.read + take) % this.samples.length; this.size -= take; this.consumed += take; this.fraction -= take;
+      if (!this.size) this.fraction = 0;
+    }
+  }
+  clear() { this.read = this.write = this.size = this.fraction = this.consumed = 0; }
+}
