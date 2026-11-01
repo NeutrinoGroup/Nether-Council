@@ -1,6 +1,28 @@
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 const id = "11111111-1111-4111-8111-111111111111";
+test("browsing and denied microphone permission never open a paid voice connection", async ({ page }) => {
+  let admissions = 0, connections = 0;
+  const now = Date.now();
+  const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => { throw new DOMException("Denied", "NotAllowedError"); };
+  });
+  await page.route("**/api/sessions", route => { admissions++; return route.fulfill({ json: { session } }); });
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.routeWebSocket("**/api/ws", ws => { connections++; ws.onMessage(() => {}); });
+  await page.goto("/play?invite=test-fixture&lang=en");
+  const start = page.getByRole("button", { name: "Turn on mic & meet Meng Po" });
+  await expect(start).toBeEnabled();
+  // Model readiness spans hydration and its passive effects, including any prewarm effect.
+  await expect(page.locator(".character-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
+  expect(admissions).toBe(0);
+  expect(connections).toBe(0);
+  await start.click();
+  await expect(page.locator(".error-note")).toBeVisible();
+  expect(admissions).toBe(0);
+  expect(connections).toBe(0);
+});
 test("missing invitation keeps paid voice entry closed", async ({ page }, info) => {
   await page.goto("/play?lang=en");
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);

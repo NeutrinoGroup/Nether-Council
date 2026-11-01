@@ -14,7 +14,8 @@ if (!/^https:\/\/nether-council(?:-[a-z0-9-]+)?\.vercel\.app$/.test(origin)) thr
 if ((process.env.CAMPAIGN_SIGNING_SECRET?.length ?? 0) < 32) throw new Error("Campaign signing secret is missing");
 const selected = flag("--locale");
 if (selected && selected !== "zh" && selected !== "en") throw new Error("Choose zh or en");
-const browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"], ...(existsSync("/Applications/Google Chrome.app") ? { channel: "chrome" } : {}) });
+const virtualOutput = process.argv.includes("--virtual-audio-output");
+const browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", ...(virtualOutput ? ["--disable-audio-output"] : [])], ...(existsSync("/Applications/Google Chrome.app") ? { channel: "chrome" } : {}) });
 const reports: Record<string, unknown>[] = [];
 let failed = false;
 try {
@@ -55,7 +56,7 @@ try {
     })();` });
     const page = await context.newPage(); page.setDefaultTimeout(30000);
     const startedAt = Date.now();
-    const report: Record<string, unknown> = { at: new Date().toISOString(), origin, locale, browser: browser.version(), platform: process.platform, viewport: mobile ? "390x844 on Mac; NOT a physical phone" : "1440x1000", kind: "real_qwen_real_worklet_synthetic_media_stream_not_human_acceptance" };
+    const report: Record<string, unknown> = { at: new Date().toISOString(), origin, locale, browser: browser.version(), platform: process.platform, viewport: mobile ? "390x844 on Mac; NOT a physical phone" : "1440x1000", kind: "real_qwen_real_worklet_synthetic_media_stream_not_human_acceptance", audioOutput: virtualOutput ? "virtual_output_clock_not_audible_device" : "system_output_not_human_listened" };
     let upload = 0, audio = 0, vad = 0, done = 0, userTurns = 0, characterTurns = 0, translationsReady = 0, webSocketConnections = 0;
     let resultValid = false, resultFallback: boolean | undefined;
     let uploadDuringPlayback = 0;
@@ -96,6 +97,19 @@ try {
       await page.goto(`${origin}/?lang=${locale}&invite=${invite}`, { waitUntil: "domcontentloaded" });
       report.step = "entry";
       await page.getByRole("link", { name: locale === "zh" ? "推门，遇见孟婆" : "Step inside. Meet Meng Po" }).click();
+      // Detect a stalled OS audio clock BEFORE requesting a billable provider connection.
+      report.step = "audio_clock";
+      const clock = await page.evaluate(async () => {
+        const context = new AudioContext();
+        try {
+          await context.resume();
+          const start = context.currentTime;
+          await new Promise(resolve => setTimeout(resolve, 400));
+          return context.currentTime - start;
+        } finally { await context.close(); }
+      });
+      report.audioClockAdvancedSeconds = clock;
+      expect(clock, "Audio output clock stalled; select a working output device, or explicitly use --virtual-audio-output for digital-only testing").toBeGreaterThan(0.15);
       report.step = "model";
       await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 30000 }).toBeGreaterThan(29000);
       expect(await page.evaluate(() => typeof (window as unknown as { feedFixture?: unknown }).feedFixture)).toBe("function");
