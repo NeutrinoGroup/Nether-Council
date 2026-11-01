@@ -40,12 +40,11 @@
 ```json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["hkg1"]
+    "regions": ["sin1"]
 }
 ```
 
-> [!IMPORTANT]
-> **香港节点锁定（`hkg1`）必要性**：通义千问 API 位于中国大陆华东地区。Vercel 部署函数锁定在 `hkg1`（香港），并通过 IPv4 连接，可将往返延迟降至最低（TTFA 400ms~600ms），并消除跨国网络波动与 IPv6 路由解析超时风险。
+本轮以真实上游验收选择 `sin1`。2026-11-01，新建香港预览多次连接 Qwen TCP 超时；相同提交的新加坡预览已通过真实语音完整链路。旧正式香港部署仍能工作，因此不能据此宣称整个香港区域故障。保留 IPv4 与有界握手，后续更换区域仍需重新实测；节点标签本身不保证延迟或可达性。详见 [ADR 0009](adr/0009-verified-voice-region.md) 与 [Vercel 区域配置](https://vercel.com/docs/functions/configuring-functions/region)。
 
 ---
 
