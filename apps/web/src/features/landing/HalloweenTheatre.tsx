@@ -16,6 +16,7 @@ import { preloadAudioWorklet } from "../voice/audio/module";
 import { VoiceTrial } from "../voice/VoiceTrial";
 import { silentLevels } from "../voice/useAudioReactive";
 import type { EncounterPhase } from "../world3d/CameraRig";
+import { UserNavBadge } from "../auth/UserNavBadge";
 import "./theatre.css";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
@@ -110,7 +111,10 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
       <header className="theatre-nav">
         <Link href={href("/")} className="theatre-brand" aria-label={t.name}><span>黄泉议会</span><span>Nether Council</span></Link>
         <span className="theatre-season">HALLOWEEN · {t.tagline}</span>
-        <button className="theatre-language" aria-label={t.language} onClick={() => setLocale(locale === "zh" ? "en" : "zh")}>{locale === "zh" ? "EN" : "中文"}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <UserNavBadge locale={locale} />
+          <button className="theatre-language" aria-label={t.language} onClick={() => setLocale(locale === "zh" ? "en" : "zh")}>{locale === "zh" ? "EN" : "中文"}</button>
+        </div>
       </header>
       <div ref={stage} className="theatre-stage" data-model-loaded={loaded} aria-label={t.model} role="img">
         {performing !== "meng-po" && phase !== "landing" ? <div className="theatre-poster alternate-performer"><Image src={getCharacter(performing).posterUrl} width={500} height={500} alt={getCharacter(performing).name[locale]} unoptimized /></div> : !loaded && poster}
