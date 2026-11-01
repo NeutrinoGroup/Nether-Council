@@ -69,7 +69,7 @@ export class VoiceClient {
     this.socket?.close(); this.socket = undefined; this.abort.abort();
     this.clearNetworkTimers(); clearTimeout(this.connectionTimer); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.finishTimer); clearInterval(this.progressTimer);
     this.audio.stopCapture(); this.audio.clear(); this.activeResponse = undefined; this.turns = []; this.result = undefined;
-    this.update({ demo: true, demoReason: reason, phase: "listening", session: undefined, result: undefined, draft: undefined, caption: undefined, userCaption: undefined, finalizing: false, muted: true, userTurns: 0, canClaim: false, claimReady: false, error: undefined });
+    this.update({ demo: true, demoReason: reason, phase: "listening", session: undefined, result: undefined, draft: undefined, caption: undefined, userCaption: undefined, finalizing: false, muted: true, userTurns: 0, canClaim: false, claimReady: false, error: ["MICROPHONE_DENIED", "CONNECTION_FAILED"].includes(reason) ? reason : undefined });
     void this.demoReply(0);
   }
   private async demoReply(step: number) {

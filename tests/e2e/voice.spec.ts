@@ -49,6 +49,7 @@ test("worklet uploads during playback; interruption, mute, isolation and stop wo
     ws.onMessage(raw => {
       const event = JSON.parse(String(raw)); messages.push(event);
       if (event.type === "session.start") send({ type: "session.ready", session });
+      if (event.type === "ping") send({ type: "pong" });
     });
   });
   await page.goto("/play?invite=test-fixture&lang=en");
@@ -117,8 +118,9 @@ test("retryable upstream failure survives a normal close and reconnects", async 
     connections++; const attempt = connections;
     ws.onMessage(raw => {
       const event = JSON.parse(String(raw));
+      const envelope = { protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: event.epoch ?? 0, seq: 0 };
+      if (event.type === "ping") { ws.send(JSON.stringify({ ...envelope, type: "pong" })); return; }
       if (event.type !== "session.start") return;
-      const envelope = { protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: event.epoch, seq: 0 };
       if (attempt === 1) {
         ws.send(JSON.stringify({ ...envelope, type: "error", error: { code: "UPSTREAM_UNAVAILABLE", retryable: true, message: { zh: "稍后重试", en: "Retry shortly" } } }));
         ws.close({ code: 1000, reason: "Close raced the retryable error" });
@@ -139,7 +141,7 @@ test("two story turns enable ending; asynchronous bilingual captions preserve li
   const send = (event: object) => socket.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }));
   await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
   await page.route("**/api/events", route => route.fulfill({ status: 202 }));
-  await page.routeWebSocket("**/api/ws", ws => { socket = ws; ws.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); }); });
+  await page.routeWebSocket("**/api/ws", ws => { socket = ws; ws.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); if (event.type === "ping") send({ type: "pong" }); }); });
   await page.goto("/play?invite=fixture&lang=zh");
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await page.getByLabel("怎么称呼你？（选填）").fill("南瓜 Alex");

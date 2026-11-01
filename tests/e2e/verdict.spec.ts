@@ -68,6 +68,18 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
     ws.onMessage(raw => {
       const event = JSON.parse(String(raw));
       messages.push(event);
+      if (event.type === "ping") {
+        socket?.send(
+          JSON.stringify({
+            protocolVersion: 1,
+            eventId: crypto.randomUUID(),
+            sessionId: id,
+            epoch: 0,
+            seq: sentSeq++,
+            type: "pong",
+          })
+        );
+      }
       if (event.type === "session.start") {
         socket?.send(
           JSON.stringify({
@@ -193,7 +205,11 @@ test("late HTTP recovery cannot attach an old identity after a character change"
   await page.route("**/api/verdict", route => { pending = route; });
   await page.routeWebSocket("**/api/ws", ws => {
     socket = ws;
-    ws.onMessage(raw => { if (JSON.parse(String(raw)).type === "session.start") send({ type: "session.ready", session }); });
+    ws.onMessage(raw => {
+      const event = JSON.parse(String(raw));
+      if (event.type === "session.start") send({ type: "session.ready", session });
+      if (event.type === "ping") send({ type: "pong" });
+    });
   });
   await page.goto("/play?invite=test-fixture&lang=en");
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();

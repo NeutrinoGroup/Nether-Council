@@ -14,7 +14,7 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await page.route("**/api/events", route => route.fulfill({ status: 202 }));
   await page.route("**/api/verdict", route => route.fulfill({ json: { result } }));
   await page.route("**/api/referrals", route => route.fulfill({ json: { shareUrl: "https://example.com/play?ref=test" } }));
-  await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); if (event.type === "ping") send({ type: "pong" }); }); });
+  await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") { send({ type: "session.ready", session }); send({ type: "response.started", responseId: "reply" }); } if (event.type === "ping") send({ type: "pong" }); }); });
   await page.goto("/?lang=zh&invite=fixture");
   await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
