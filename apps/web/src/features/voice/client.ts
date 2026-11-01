@@ -40,7 +40,7 @@ export class VoiceClient {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private heartbeatDeadline?: ReturnType<typeof setTimeout>;
   private appliedCalls = new Set<string>();
-  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean } = {}) {}
+  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number } = {}) {}
   private applyScene(payload: UiAction) {
     const soup = this.view.soup ?? { mood: "healing" as const, worries: [] };
     if (payload.action === "change_mood") {
@@ -55,6 +55,12 @@ export class VoiceClient {
     if (!reset && this.responseTimer !== undefined) return;
     clearTimeout(this.responseTimer);
     if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) this.responseTimer = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), 3000);
+  }
+  private armPermissionFallback() {
+    clearTimeout(this.responseTimer);
+    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) {
+      this.responseTimer = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), this.options.permissionTimeoutMs ?? 3000);
+    }
   }
   private clearNetworkTimers() {
     clearTimeout(this.responseTimer); clearTimeout(this.heartbeatDeadline); clearInterval(this.heartbeatTimer);
@@ -136,7 +142,7 @@ export class VoiceClient {
   }
   async activate(nickname = "") {
     this.isPrewarming = false;
-    this.armFallback();
+    this.armPermissionFallback();
     this.demoLocale = this.view.session?.locale ?? this.demoLocale;
     this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now();
@@ -177,7 +183,7 @@ export class VoiceClient {
     if (this.isPrewarmed()) {
       return this.activate(nickname);
     }
-    this.demoLocale = locale; this.armFallback();
+    this.demoLocale = locale; this.armPermissionFallback();
     this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now(); this.update({ phase: "permission" });
     try {
