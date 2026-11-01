@@ -199,6 +199,7 @@ export function HostStage({
             characterId={characterId}
             locale={locale}
             phase={view.phase}
+            soup={view.soup}
             interruptedAt={view.interruptedAt}
             celebrating={celebrating || Boolean(view.result)}
             readRms={readRms}

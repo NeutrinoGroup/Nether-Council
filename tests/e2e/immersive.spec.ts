@@ -1,0 +1,43 @@
+import { expect, test, type WebSocketRoute } from "@playwright/test";
+
+// Synthetic protocol/PCM evidence. This does not certify a live provider call.
+test("PCM spectrum, subtitles, interruption and the exportable ritual form one encounter", async ({ page }) => {
+  test.setTimeout(45000);
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  const id = "77777777-7777-4777-8777-777777777777", now = Date.now();
+  const session = { id, characterId: "meng-po", locale: "zh", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  const result = { id: "88888888-8888-4888-8888-888888888888", sessionId: id, characterId: "meng-po", generatedAt: now, fallback: false, title: { zh: "散会判官", en: "Meeting Adjourner" }, verdict: { zh: "五场会议，留给南瓜汤。", en: "Five meetings, left in the brew." }, warmClosing: { zh: "今晚早点休息。", en: "Rest early tonight." }, tags: [{ zh: "放下", en: "Let go" }, { zh: "休息", en: "Rest" }], sourceTurnIds: ["story"] };
+  let ws: WebSocketRoute, seq = 0;
+  const messages: { type: string }[] = [];
+  const send = (event: object) => ws.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }));
+  await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.route("**/api/verdict", route => route.fulfill({ json: { result } }));
+  await page.route("**/api/referrals", route => route.fulfill({ json: { shareUrl: "https://example.com/play?ref=test" } }));
+  await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); if (event.type === "ping") send({ type: "pong" }); }); });
+  await page.goto("/?lang=zh&invite=fixture");
+  await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
+  await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
+  await page.getByRole("button", { name: "开麦，向孟婆倾诉" }).click();
+  await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(2);
+  const pcm = Buffer.alloc(24000 * 2 * 6);
+  for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i * 2 * Math.PI * 3000 / 24000) * 8000), i * 2);
+  for (let offset = 0; offset < pcm.length; offset += 24000) send({ type: "audio.delta", responseId: "reply", audio: pcm.subarray(offset, offset + 24000).toString("base64") });
+  send({ type: "response.done", responseId: "reply" });
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "reply", segmentId: "reply", revision: 1, sourceLocale: "zh", sourceText: "五场会议，辛苦你了。", speaker: "character", final: true } });
+  await expect(page.locator(".theatre-subtitle.character")).toContainText("五场会议，辛苦你了。");
+  const canvas = page.locator(".theatre-stage canvas");
+  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number)).toBeGreaterThan(0.1);
+  await expect.poll(() => canvas.getAttribute("data-high-energy").then(Number)).toBeGreaterThan(0.01);
+  await page.getByRole("button", { name: "让我说一句" }).click();
+  await expect.poll(() => messages.some(e => e.type === "response.cancel")).toBe(true);
+  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number)).toBeLessThan(0.01);
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "story", segmentId: "story", revision: 1, sourceLocale: "zh", sourceText: "今天开了五场会议，我很累。", speaker: "user", final: true } });
+  await page.getByRole("button", { name: "结束对话", exact: true }).click();
+  await page.getByRole("button", { name: "干了这碗南瓜孟婆汤" }).click();
+  await expect(page.locator(".letting-go-ritual")).toHaveAttribute("data-released", "true");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载身份卡 PNG" }).click();
+  expect((await download).suggestedFilename()).toMatch(/\.png$/);
+  expect(errors).toEqual([]);
+});

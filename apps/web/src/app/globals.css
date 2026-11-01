@@ -140,3 +140,31 @@ body{background:#11100f}
 @media(max-width:640px){.party-shell .conversation{order:1}.party-shell .voice-setup{order:0;gap:0}.party-shell .voice-setup .encounter-intro{display:none}.party-shell .character-grid{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding-bottom:4px;scrollbar-color:var(--line) var(--ground)}.party-shell .character-chip{flex-shrink:0;white-space:nowrap}.party-shell .voice-setup fieldset{margin-top:8px}.party-shell .voice-setup legend{font-size:13px}.party-shell .nickname-field{margin-top:8px}.party-shell .nickname-field label{font-size:13px}.party-shell .nickname-field p{display:none}.party-shell .nickname-field input{min-height:44px}.party-shell .mobile-opening-lines{margin-top:4px}.party-shell .permission-note{font-size:11px;margin-top:2px}.party-shell[data-active=false] .opening-line{display:none}.party-shell .entry-feedback :is(.invite-note,.error-note){font-size:12px}}
 
 @media(max-width:640px){.party-shell .voice-actions{flex-wrap:nowrap}.party-shell .entry-feedback{flex-basis:auto;width:100%}}
+
+/* Meng Po's live soul soup: also present when WebGL falls back to a poster. */
+.character-stage { position: relative; }
+.soul-soup { --soul-fire: #f3a45b; pointer-events: none; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: inset 0 -30px 70px -40px var(--soul-fire); transition: box-shadow .4s; }
+.soul-soup[data-mood="angry_support"] { --soul-fire: #b06bff; }
+.soul-soup[data-mood="laughing"] { --soul-fire: #ffd46a; }
+.soul-soup[data-mood="mystical"] { --soul-fire: #a6ead8; }
+.soup-flavour { position: absolute; bottom: 5px; width: 100%; text-align: center; font-size: 11px; letter-spacing: .05em; color: var(--soul-fire); }
+.soul-worries { position: absolute; inset: 12% 4% 30%; display: flex; align-items: center; justify-content: space-around; gap: 6px; }
+.soul-worry { max-width: 32%; overflow-wrap: anywhere; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--soul-fire) 40%, transparent); border-radius: 18px; background: #17111dda; color: var(--soul-fire); font-size: clamp(12px, 1.2vw, 17px); text-shadow: 0 0 12px var(--soul-fire); animation: soul-float 3s ease-in-out infinite alternate; animation-delay: calc(var(--ghost-index) * -.8s); }
+.soul-soup[data-ritual="true"] .soul-worry { animation: soul-to-ash 2.8s ease-in forwards; animation-delay: calc(var(--ghost-index) * .15s); }
+.soup-blessing { position: absolute; bottom: 30px; left: 5%; right: 5%; text-align: center; }
+.soup-fortune { padding: 12px 16px; background: #17111df2; border: 1px solid var(--soul-fire); border-radius: 4px; animation: soup-fortune-in .7s ease-out both; }
+.soup-fortune > span { display: block; color: var(--soul-fire); font-size: 11px; letter-spacing: .05em; }
+.soup-fortune > p { margin: 8px 0 0; color: #ffefd6; font-size: clamp(14px, 1.6vw, 22px); overflow-wrap: anywhere; }
+@keyframes soul-float { from { transform: translateY(-10px) rotate(-3deg); } to { transform: translateY(10px) rotate(3deg); } }
+@keyframes soul-to-ash { 0% { opacity: 1; } 70% { opacity: .6; transform: translateY(90px) scale(.55) rotate(12deg); filter: blur(1px); } 100% { opacity: 0; transform: translateY(120px) scale(.05); filter: blur(8px); } }
+@keyframes soup-fortune-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .soul-worry, .soul-soup[data-ritual="true"] .soul-worry, .soup-fortune { animation: none; } .soul-soup[data-ritual="true"] .soul-worry { visibility: hidden; } .soul-soup { transition: none; } }
+
+.voice-text-fallback { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-block: 16px; }
+.voice-text-fallback label { grid-column: 1 / -1; }
+.voice-text-fallback input { min-width: 0; padding: 10px; color: inherit; background: #17141b; border: 1px solid #84766f; border-radius: 6px; }
+.voice-text-fallback button { padding-inline: 16px; border: 1px solid #84766f; border-radius: 6px; }
+.demo-status { font-size: 12px; opacity: .7; }
+.ritual-worry, .ritual-blessing { text-align: center; color: #f5cf91; }
+.character-stage[data-mood="storm"] { background: radial-gradient(ellipse, #43306955, transparent 70%); }
+.character-stage[data-mood="warm"] { background: radial-gradient(ellipse, #b77b3455, transparent 70%); }

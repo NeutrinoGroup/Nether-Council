@@ -8,8 +8,13 @@ import { motion, useReducedMotion } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
-import { CHARACTER_IDS, getCharacter } from "@nether/party-core";
+import { getCharacter } from "@nether/party-core";
+import { CastCarousel } from "./CastCarousel";
 import type { CharacterId, Locale } from "@nether/contracts";
+import type { VoiceView } from "../voice/client";
+import { VoiceTrial } from "../voice/VoiceTrial";
+import { silentLevels } from "../voice/useAudioReactive";
+import type { EncounterPhase } from "../world3d/CameraRig";
 import "./theatre.css";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
@@ -39,13 +44,21 @@ function Arrow() {
 export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Locale; query: string }) {
   const root = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const [phase, setPhase] = useState<EncounterPhase>("landing");
+  const audio = useRef(silentLevels());
+  const voice = useRef<VoiceView | undefined>(undefined);
+  const onView = useCallback((view: VoiceView) => { voice.current = view; }, []);
+  const entry = useRef<HTMLButtonElement>(null);
+  const arrive = useCallback(() => setPhase(current => current === "entering" ? "conversation" : current), []);
+  const [performing, setPerforming] = useState<CharacterId>("meng-po");
+  const enter = (id: CharacterId = "meng-po") => { setPerforming(id); window.scrollTo({ top: 0, behavior: "instant" }); setPhase("entering"); };
+  const close = () => { voice.current = undefined; Object.assign(audio.current, silentLevels()); setPhase("landing"); requestAnimationFrame(() => entry.current?.focus()); };
   const progress = useRef({ value: 0 });
   const reduced = useReducedMotion();
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
-  const [selected, setSelected] = useState<CharacterId>("meng-po");
   const t = copy[locale];
   const onLoaded = useCallback(() => setLoaded(true), []);
   const onFailure = useCallback(() => { setFailed(true); setLoaded(false); }, []);
@@ -55,6 +68,15 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
     if (character) params.set("character", character);
     return `${path}?${params}`;
   };
+
+  useEffect(() => {
+    if (phase === "landing") return;
+    const before = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Covers unavailable WebGL/failed GLB, so voice is never gated on 3D.
+    const timer = phase === "entering" ? setTimeout(arrive, reduced ? 0 : 2850) : undefined;
+    return () => { document.body.style.overflow = before; clearTimeout(timer); };
+  }, [phase, reduced, arrive]);
 
   useEffect(() => {
     const element = stage.current;
@@ -69,7 +91,7 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
     const media = gsap.matchMedia();
     media.add("(prefers-reduced-motion: no-preference)", () => {
       gsap.to(progress.current, { value: 1, ease: "none", scrollTrigger: { trigger: ".theatre-prologue", start: "top top", end: "bottom top", scrub: 0.6 } });
-      gsap.to(".theatre-halo", { scale: 0.7, yPercent: -14, opacity: 0.45, ease: "none", scrollTrigger: { trigger: ".theatre-prologue", start: "top top", end: "bottom center", scrub: 0.6 } });
+
       gsap.from(".story-prompt", { y: 35, opacity: 0.6, duration: 1.1, ease: "expo.out", scrollTrigger: { trigger: ".story-prompt", start: "top 85%", once: true } });
     });
     return () => { media.revert(); progress.current.value = 0; };
@@ -78,33 +100,37 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
   const poster = <div className="theatre-poster"><Image src="/posters/meng-po.png" width={500} height={500} priority alt={locale === "zh" ? "孟婆抱着南瓜忘忧汤" : "Meng Po holding her pumpkin brew"} unoptimized /></div>;
 
   return (
-    <main ref={root} className="theatre" lang={locale === "zh" ? "zh-CN" : "en"}>
+    <main ref={root} className="theatre" data-phase={phase} lang={locale === "zh" ? "zh-CN" : "en"}>
       <a className="theatre-skip" href="#encounter">{t.skip}</a>
       <header className="theatre-nav">
         <Link href={href("/")} className="theatre-brand" aria-label={t.name}><span>黄泉议会</span><span>Nether Council</span></Link>
         <span className="theatre-season">HALLOWEEN · {t.tagline}</span>
         <button className="theatre-language" aria-label={t.language} onClick={() => setLocale(locale === "zh" ? "en" : "zh")}>{locale === "zh" ? "EN" : "中文"}</button>
       </header>
+      <div ref={stage} className="theatre-stage" data-model-loaded={loaded} aria-label={t.model} role="img">
+        {performing !== "meng-po" && phase !== "landing" ? <div className="theatre-poster alternate-performer"><Image src={getCharacter(performing).posterUrl} width={500} height={500} alt={getCharacter(performing).name[locale]} unoptimized /></div> : !loaded && poster}
+        <StageBoundary onFailure={onFailure}><Scene progress={progress} onLoaded={onLoaded} paused={paused} reduced={Boolean(reduced)} phase={phase} characterId={performing} onArrive={arrive} audio={audio} voice={voice} /></StageBoundary>
+        <span className="theatre-model-state" aria-live="polite">{failed ? t.fallback : loaded ? t.model : t.loading}</span>
+      </div>
+      <div className="theatre-vignette" aria-hidden="true" />
+      <div className="theatre-narrative" inert={phase !== "landing"}>
       <div className="theatre-prologue">
-        <div ref={stage} className="theatre-stage" data-model-loaded={loaded} aria-label={t.model} role="img">
-          <div className="theatre-halo" /><div className="theatre-plinth" />
-          {!loaded && poster}
-          <StageBoundary onFailure={onFailure}><Scene progress={progress} onLoaded={onLoaded} paused={paused} reduced={Boolean(reduced)} /></StageBoundary>
-          <span className="theatre-model-state" aria-live="polite">{failed ? t.fallback : loaded ? t.model : t.loading}</span>
-        </div>
-        <section className="theatre-opening" aria-labelledby="theatre-title">
+        <motion.section className="theatre-opening" aria-labelledby="theatre-title" animate={phase === "landing" ? { opacity: 1, filter: "blur(0px)", y: 0 } : { opacity: 0, filter: reduced ? "none" : "blur(18px)", y: reduced ? 0 : -60 }} transition={{ duration: reduced ? 0 : 0.85, ease: "easeOut" }}>
           <h1 id="theatre-title" className={locale === "zh" ? "theatre-display han" : "theatre-display"}><span>{t.title[0]}</span><span>{t.title[1]}</span></h1>
-          <div className="theatre-invitation"><p>{t.intro}</p><MotionLink whileHover={{ x: reduced ? 0 : 5 }} whileTap={{ scale: reduced ? 1 : 0.98 }} className="theatre-enter" href={href("/play", "meng-po")}>{t.enter}<Arrow /></MotionLink><a className="theatre-cast-link" href="#cast">{t.castLink}<span className="theatre-arrow-down"><Arrow /></span></a></div>
+          <div className="theatre-invitation"><p>{t.intro}</p><motion.button ref={entry} whileHover={{ x: reduced ? 0 : 5 }} whileTap={{ scale: reduced ? 1 : 0.98 }} className="theatre-enter" onClick={() => enter()}>{t.enter}<Arrow /></motion.button><a className="theatre-cast-link" href="#cast">{t.castLink}<span className="theatre-arrow-down"><Arrow /></span></a></div>
           <span className="theatre-side-note">A GOOD NIGHT TO LET GO.</span>
-        </section>
+        </motion.section>
         <section className="theatre-story" aria-labelledby="story-title"><div className="story-prompt"><h2 id="story-title" className={locale === "zh" ? "theatre-display han" : "theatre-display"}>{t.storyTitle.map(line => <span key={line}>{line}</span>)}</h2><p>{t.story}</p><p className="theatre-interrupt">{t.interrupt}</p></div></section>
       </div>
       <section id="cast" className="theatre-cast" aria-labelledby="cast-title">
         <div className="theatre-cast-heading"><h2 id="cast-title">{t.cast}</h2><p>{t.voices}</p></div>
-        <div className="theatre-cast-layout"><div className="theatre-cast-portrait" aria-hidden="true"><Image key={selected} src={getCharacter(selected).posterUrl} width={500} height={500} alt="" unoptimized loading="lazy" /></div><div className="theatre-cast-list">{CHARACTER_IDS.map(id => { const character = getCharacter(id); return <Link key={id} href={href("/play", id)} className="theatre-cast-member" onMouseEnter={() => setSelected(id)} onFocus={() => setSelected(id)} aria-label={`${t.choose}: ${character.name[locale]}`}><span>{character.name[locale]}</span><span className="theatre-cast-role">{character.role[locale].split(" · ")[0]}</span><Arrow /></Link>; })}</div></div>
+        <CastCarousel locale={locale} href={id => href("/play", id)} onChoose={enter} />
       </section>
       <section id="encounter" className="theatre-finale" aria-labelledby="gift-title"><div className="theatre-gift-copy"><h2 id="gift-title" className={locale === "zh" ? "theatre-display han" : "theatre-display"}>{t.giftTitle.map(line => <span key={line}>{line}</span>)}</h2><p>{t.gift}</p></div><div className="theatre-last-call"><p>{t.finale}</p><MotionLink whileHover={{ y: reduced ? 0 : -3 }} whileTap={{ scale: reduced ? 1 : 0.98 }} className="theatre-enter" href={href("/play")}>{t.start}<Arrow /></MotionLink><p className="theatre-privacy">{t.privacy}</p></div></section>
       <footer className="theatre-footer"><p>{t.footer}</p><Link href={href("/host")}>{t.host}<Arrow /></Link><span>NETHER COUNCIL</span></footer>
+      </div>
+      {phase === "entering" && <p className="threshold-status" role="status">{locale === "zh" ? "穿过夜色，孟婆在等你。" : "Through the night. She’s waiting."}</p>}
+      {phase === "conversation" && <VoiceTrial initialLocale={locale} initialCharacter={performing} invite={new URLSearchParams(query).get("invite") ?? ""} referral={new URLSearchParams(query).get("ref") ?? undefined} immersive={{ audio, onView, onClose: close }} />}
     </main>
   );
 }

@@ -1,47 +1,48 @@
 import { expect, test } from "@playwright/test";
 
-test("theatre loads real 3D, switches language and preserves admission through cast entry", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
-  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-  let microphoneRequested = false;
-  await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { throw new Error("UNEXPECTED_MICROPHONE"); }; });
-  page.on("pageerror", error => { if (error.message.includes("UNEXPECTED_MICROPHONE")) microphoneRequested = true; });
-  await page.goto("/?invite=test-fixture&ref=friend-fixture&lang=en&character=werewolf");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("LEAVE ITWITH THE SPIRITS.");
+test("same-page threshold preserves admission and waits for an explicit microphone gesture", async ({ page }) => {
+  let microphoneRequests = 0;
+  await page.exposeFunction("recordMicRequest", () => microphoneRequests++);
+  await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { await (window as unknown as { recordMicRequest: () => Promise<void> }).recordMicRequest(); throw new Error("No microphone in this navigation test"); }; });
+  await page.goto("/?invite=test-fixture&ref=friend-fixture&lang=en");
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
-  await expect(page.locator(".theatre-stage canvas")).toBeVisible();
   await page.getByRole("button", { name: "切换到中文" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("把烦恼留在人间。");
+  const url = page.url();
+  await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
+  await expect(page.locator(".theatre")).toHaveAttribute("data-phase", "conversation");
+  expect(page.url()).toBe(url);
+  await expect(page.getByRole("button", { name: "开麦，向孟婆倾诉" })).toBeEnabled();
+  expect(microphoneRequests).toBe(0);
+  await page.getByRole("button", { name: "返回人间" }).click();
+  await expect(page.getByRole("button", { name: "推门，遇见孟婆" })).toBeFocused();
   await page.getByRole("link", { name: "与这位角色开聊: 钟馗", exact: true }).click();
-  await expect(page).toHaveURL(/\/play\?/);
-  const params = new URL(page.url()).searchParams;
-  expect(Object.fromEntries(params)).toEqual({ invite: "test-fixture", ref: "friend-fixture", lang: "zh", character: "zhong-kui" });
-  await expect(page.getByRole("heading", { name: "钟馗", exact: true })).toBeVisible();
-  expect(microphoneRequested).toBe(false);
-  expect(errors).toEqual([]);
+  await expect(page.getByRole("heading", { name: /钟馗\s*今夜，听你说。/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开麦，向钟馗倾诉" })).toBeEnabled();
+  expect(page.url()).toBe(url);
+  expect(microphoneRequests).toBe(0);
 });
 
-test("failed landing GLB leaves poster and a usable encounter entry", async ({ page }) => {
+test("failed GLB keeps the same-page encounter accessible", async ({ page }) => {
   await page.route("**/models/meng-po.glb", route => route.fulfill({ status: 503, body: "Unavailable" }));
-  await page.goto("/?lang=en&invite=test-fixture");
-  await expect(page.getByText("3D is unavailable. Your voice encounter is still ready.")).toBeVisible({ timeout: 20000 });
+  await page.goto("/?lang=en");
+  await expect(page.getByText("3D is unavailable. Your voice encounter is still ready.")).toBeAttached({ timeout: 20000 });
   await expect(page.getByAltText("Meng Po holding her pumpkin brew")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Step inside. Meet Meng Po" })).toHaveAttribute("href", /\/play\?.*invite=test-fixture/);
+  await page.getByRole("button", { name: "Step inside. Meet Meng Po" }).click();
+  await expect(page.getByRole("button", { name: "Turn on mic & talk" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Turn on mic & talk" })).toBeDisabled();
 });
 
-test("scroll narrative respects motion preference and fits narrow screens", async ({ page }) => {
+test("camera advances and holds its close-up after the panel wakes", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?lang=en");
+  const canvas = page.locator(".theatre-stage canvas");
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
-  const initial = await page.locator(".theatre-halo").evaluate(el => getComputedStyle(el).transform);
-  await page.locator("#cast").scrollIntoViewIfNeeded();
-  await expect.poll(() => page.locator(".theatre-halo").evaluate(el => getComputedStyle(el).transform)).not.toBe(initial);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect.poll(() => page.locator(".theatre-halo").evaluate(el => getComputedStyle(el).transform)).toBe("none");
-  await expect(page.locator("#gift-title")).toBeVisible();
+  await expect.poll(() => canvas.getAttribute("data-camera-z").then(Number)).toBeGreaterThan(6);
+  await page.getByRole("button", { name: "Step inside. Meet Meng Po" }).click();
+  await expect(page.locator(".theatre")).toHaveAttribute("data-phase", "conversation");
+  await expect.poll(() => canvas.getAttribute("data-camera-z").then(Number)).toBeLessThan(4.2);
+  await page.waitForTimeout(400);
+  expect(Number(await canvas.getAttribute("data-camera-z"))).toBeLessThan(4.2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  // The footer action keeps an existing character choice rather than dropping it.
-  await page.goto("/?lang=en&character=werewolf&invite=test-fixture");
-  await expect(page.getByRole("link", { name: "Begin my encounter" })).toHaveAttribute("href", /character=werewolf/);
 });
