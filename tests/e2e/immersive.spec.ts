@@ -16,9 +16,13 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await page.route("**/api/referrals", route => route.fulfill({ json: { shareUrl: "https://example.com/play?ref=test" } }));
   await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); if (event.type === "ping") send({ type: "pong" }); }); });
   await page.goto("/?lang=zh&invite=fixture");
-  await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
-  await page.getByRole("button", { name: "开麦，向孟婆倾诉" }).click();
+  await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
+  await expect(page.locator(".theatre")).toHaveAttribute("data-phase", "conversation", { timeout: 15000 });
+  const micButton = page.getByRole("button", { name: "开麦，向孟婆倾诉" });
+  await expect(micButton).toBeEnabled();
+  await micButton.click();
+  await expect.poll(() => messages.some(e => e.type === "session.start"), { timeout: 15000 }).toBe(true);
   await expect.poll(() => messages.filter(e => e.type === "audio.append").length, { timeout: 15000 }).toBeGreaterThan(2);
   const pcm = Buffer.alloc(24000 * 2 * 6);
   for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i * 2 * Math.PI * 3000 / 24000) * 8000), i * 2);
