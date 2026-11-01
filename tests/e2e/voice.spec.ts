@@ -156,6 +156,7 @@ test("two story turns enable ending; asynchronous bilingual captions preserve li
   const pcm = Buffer.alloc(24000 * 2 * 4);
   for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 15) * 3000), i * 2);
   for (let offset = 0; offset < pcm.length; offset += 24000) send({ type: "audio.delta", responseId: "reply", audio: pcm.subarray(offset, offset + 24000).toString("base64") });
+  send({ type: "response.done", responseId: "reply" });
   await expect(page.locator(".translated-caption").filter({ hasText: "正在翻译…" }).first()).toBeVisible();
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-mouth-level").then(Number)).toBeGreaterThan(0);
   send({ type: "caption.translation", translation: { ...character, status: "ready", translatedText: "Five meetings simmered into pumpkin soup. The midnight meeting kept the fire going. Put down those meeting notes for tonight." } });

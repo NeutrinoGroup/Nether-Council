@@ -252,7 +252,7 @@ export class VoiceClient {
       this.lastSeq = event.seq;
       if (event.type === "session.ready") {
         if (event.session.id !== session.id || event.session.expiresAt !== session.expiresAt) return this.fail("INVALID_PROTOCOL");
-        clearTimeout(this.connectionTimer); this.ready = true;
+        clearTimeout(this.connectionTimer); clearTimeout(this.responseTimer); this.ready = true;
         if (this.options.demoFallback) {
           clearInterval(this.heartbeatTimer);
           this.heartbeatTimer = setInterval(() => {

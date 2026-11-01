@@ -14,7 +14,7 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await page.route("**/api/events", route => route.fulfill({ status: 202 }));
   await page.route("**/api/verdict", route => route.fulfill({ json: { result } }));
   await page.route("**/api/referrals", route => route.fulfill({ json: { shareUrl: "https://example.com/play?ref=test" } }));
-  await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") { send({ type: "session.ready", session }); send({ type: "response.started", responseId: "reply" }); } if (event.type === "ping") send({ type: "pong" }); }); });
+  await page.routeWebSocket("**/api/ws", socket => { ws = socket; socket.onMessage(raw => { const event = JSON.parse(String(raw)); messages.push(event); if (event.type === "session.start") send({ type: "session.ready", session }); if (event.type === "ping") send({ type: "pong" }); }); });
   await page.goto("/?lang=zh&invite=fixture");
   await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
@@ -22,6 +22,7 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(2);
   const pcm = Buffer.alloc(24000 * 2 * 6);
   for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i * 2 * Math.PI * 3000 / 24000) * 8000), i * 2);
+  send({ type: "response.started", responseId: "reply" });
   for (let offset = 0; offset < pcm.length; offset += 24000) send({ type: "audio.delta", responseId: "reply", audio: pcm.subarray(offset, offset + 24000).toString("base64") });
   send({ type: "response.done", responseId: "reply" });
   send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "reply", segmentId: "reply", revision: 1, sourceLocale: "zh", sourceText: "五场会议，辛苦你了。", speaker: "character", final: true } });
