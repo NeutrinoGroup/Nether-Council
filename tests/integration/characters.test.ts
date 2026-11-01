@@ -45,7 +45,7 @@ describe("T13 Character Roster & Definitions", () => {
       for (const locale of locales) {
         const prompt = characterPrompt(id, locale);
         expect(prompt).toContain(CHARACTERS[id].name[locale]);
-        expect(prompt).toContain(locale === "zh" ? "Mandarin Chinese" : "English");
+        expect(prompt).toContain(locale === "zh" ? (id === "meng-po" ? "只讲口语普通话" : "Mandarin Chinese") : "English");
 
         const opening = openingPrompt(id, locale);
         expect(opening.length).toBeGreaterThan(5);
@@ -158,8 +158,14 @@ describe("T14 42-Scenario Character Content Evaluation Matrix", () => {
           expect(prompt).toContain(charMeta.name[locale]);
 
           // 2. Rules enforced in prompt
-          expect(prompt).toContain("1 to 3 short sentences");
-          expect(prompt).toContain("never insult the person");
+          if (id === "meng-po") {
+            expect(prompt).toContain(locale === "zh" ? "严格2~3句话" : "2–3 short sentences");
+            expect(prompt).toContain("不攻击用户");
+            expect(prompt).toContain("不编造经历");
+          } else {
+            expect(prompt).toContain("1 to 3 short sentences");
+            expect(prompt).toContain("never insult the person");
+          }
 
           // 3. User turn text is recognized as valid story text
           const confirmedTurn: ConfirmedTurn = {

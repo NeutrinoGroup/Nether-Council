@@ -1,16 +1,22 @@
+import { parseTool, sceneTools, sceneInstructions } from "./tools";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
-import { parseClientMessage, type Caption, type ConfirmedTurn, type Session, type ServerMessage } from "@nether/contracts";
+import { UiAction, parseClientMessage, type Caption, type ConfirmedTurn, type Session, type ServerMessage } from "@nether/contracts";
 import { recordTurn, encounterProgress, getCharacter } from "@nether/party-core";
 import { characterPrompt, openingPrompt } from "./prompt";
+import { parseSoulCall, soulStageInstruction, soulTools } from "./soul-tools";
 import { TranslationQueue, createTranslator } from "../../captions/server/translation-queue";
 import type { TextConfig } from "../../../shared/server/text";
 import { generateIdentity } from "../../verdict/server/generator";
 
 const Upstream = z.looseObject({
   type: z.string(),
+  payload: UiAction.optional(),
   response_id: z.string().optional(),
+  call_id: z.string().max(160).optional(),
+  name: z.string().max(100).optional(),
+  arguments: z.string().max(4096).optional(),
   item_id: z.string().optional(),
   delta: z.string().optional(),
   transcript: z.string().optional(),
@@ -19,7 +25,7 @@ const Upstream = z.looseObject({
   error: z.looseObject({ code: z.string().optional(), type: z.string().optional(), param: z.string().optional(), message: z.string().max(2000).optional() }).optional(),
 });
 
-type Config = { realtimeKey: string; realtimeUrl: string; realtimeModel: string; text?: TextConfig };
+type Config = { gatewayUrl?: string; gatewaySecret?: string; realtimeKey: string; realtimeUrl: string; realtimeModel: string; text?: TextConfig };
 type Outgoing = ServerMessage extends infer T ? T extends ServerMessage ? Omit<T, "protocolVersion" | "eventId" | "sessionId" | "epoch" | "seq"> : never : never;
 
 export function relayVoice(client: WebSocket, session: Session, config: Config): Promise<void> {
@@ -33,10 +39,18 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let finalizing = false;
     let farewellRequested = false;
     let resumeTurnsState: { role: "user" | "assistant"; text: string }[] = [];
+    let userTurnCount = 0, ritualCompleted = false, toolContinuations = 0;
+    const userItems = new Set<string>();
+    const toolCalls = new Set<string>();
+    const responsesWithTools = new Set<string>();
+    const responsesWithAudio = new Set<string>();
+    const isMengPo = session.characterId === "meng-po";
+    const instructions = () => `${characterPrompt(session.characterId, session.locale)}\n${sceneInstructions}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
     const generation = new AbortController();
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
     const canceled = new Set<string>();
+    const canonicalResponses = new Set<string>();
     const captions = new Map<string, string>();
 
     // Only bounded operational codes: never credentials, provider messages, transcripts or audio.
@@ -113,9 +127,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             if (closed || generation.signal.aborted) return;
             send({ type: "result", result });
             const speech = `${result.title[session.locale]}${session.locale === "zh" ? "。" : ". "}${result.warmClosing[session.locale]}`;
-            const instruction = session.locale === "zh"
+            const ritualInstruction = isMengPo && !ritualCompleted ? " Before the farewell, announce the pumpkin soul soup ritual in character and call trigger_soul_soup_ritual once with a short Halloween blessing. Keep the total spoken reply to 2–3 short sentences." : "";
+            const instruction = (session.locale === "zh"
               ? `请温暖真诚地为来宾作最终告别口播，必须包含这句话，不要再提问：“${speech}”`
-              : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`;
+              : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`) + ritualInstruction;
             farewellRequested = true;
             upstreamSend({
               type: "conversation.item.create",
@@ -165,6 +180,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       ready = true;
       readyAt = Date.now();
       send({ type: "session.ready", session });
+      if (isMengPo && resumeTurnsState.length) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
       upstreamSend({
         type: "conversation.item.create",
         item: {
@@ -186,9 +202,9 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
 
     const openUpstream = () => {
       readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 25000);
-      const url = new URL(config.realtimeUrl);
+      const url = new URL(config.gatewayUrl || config.realtimeUrl);
       url.searchParams.set("model", config.realtimeModel);
-      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.realtimeKey}` }, handshakeTimeout: 20_000, family: 4, maxPayload: 1_048_576 });
+      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.gatewayUrl ? config.gatewaySecret : config.realtimeKey}`, ...(config.gatewayUrl ? { "X-Nether-Continuation": "edge" } : {}) }, handshakeTimeout: 20_000, family: 4, maxPayload: 1_048_576 });
 
       upstream.on("unexpected-response", (_, response) => { response.resume(); diagnostic("handshake", response.statusCode); fail("UPSTREAM_UNAVAILABLE"); });
       upstream.on("error", error => { if (!closed) { diagnostic("transport", error.message === "Opening handshake has timed out" ? "HANDSHAKE_TIMEOUT" : "code" in error ? String(error.code) : undefined); fail("UPSTREAM_UNAVAILABLE"); } });
@@ -205,7 +221,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             session: {
               modalities: ["text", "audio"],
               voice: charMeta.voice,
-              instructions: characterPrompt(session.characterId, session.locale),
+              instructions: instructions(),
+              tools: [...sceneTools, ...(isMengPo ? soulTools.filter(tool => tool.function.name !== "change_mood") : [])],
               input_audio_format: "pcm",
               output_audio_format: "pcm",
               input_audio_transcription: { language: session.locale },
@@ -219,9 +236,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         } else if (event.type === "input_audio_buffer.speech_started") {
           if (finalizing) return;
           currentUserItem = event.item_id;
+          toolContinuations = 0;
           translations.clear();
           cancel();
           send({ type: "speech.started" });
+        } else if (event.type === "input_audio_buffer.speech_stopped") {
+          if (!finalizing) send({ type: "speech.stopped" });
         } else if (event.type === "response.created" && event.response) {
           if (finalizing && !farewellRequested) {
             canceled.add(event.response.id);
@@ -232,13 +252,42 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           activeResponse = event.response.id;
           translations.invalidate("character");
           send({ type: "response.started", responseId: event.response.id });
+        } else if (event.type === "gateway.tool_result" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && !canceled.has(event.response_id)) {
+          toolCalls.add(event.call_id); responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
+        } else if (event.type === "UI_ACTION" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.payload && !canceled.has(event.response_id)) {
+          if (!toolCalls.has(event.call_id)) {
+            toolCalls.add(event.call_id); responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
+            send({ type: "UI_ACTION", responseId: event.response_id, callId: event.call_id, payload: event.payload });
+          }
+        } else if (event.type === "response.function_call_arguments.done" && !config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.name && !canceled.has(event.response_id)) {
+          if (toolCalls.has(event.call_id)) return;
+          if (toolCalls.size >= 128) return fail("RATE_LIMITED");
+          toolCalls.add(event.call_id);
+          const payload = parseTool(event.name, event.arguments ?? "");
+          if (payload) send({ type: "UI_ACTION", responseId: event.response_id, callId: event.call_id, payload });
+          upstreamSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: event.call_id, output: JSON.stringify(payload ? { ok: true } : { error: "INVALID_TOOL_ARGUMENTS" }) } });
+          responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
         } else if (event.type === "response.audio.delta" && event.response_id && event.delta && !canceled.has(event.response_id) && event.response_id === activeResponse) {
+          responsesWithAudio.add(event.response_id);
           const pcm = Buffer.from(event.delta, "base64");
           for (let offset = 0; offset < pcm.length; offset += 24_000) {
             const chunk = pcm.subarray(offset, Math.min(offset + 24_000, pcm.length));
             if (chunk.length % 2 !== 0) return fail("UPSTREAM_UNAVAILABLE");
             send({ type: "audio.delta", responseId: event.response_id, audio: chunk.toString("base64") });
           }
+        } else if (event.type === "response.function_call_arguments.done" && isMengPo && event.response_id && event.call_id && event.name && event.arguments !== undefined) {
+          if (event.response_id !== activeResponse || canceled.has(event.response_id) || toolCalls.has(event.call_id)) return;
+          if (toolCalls.size >= 72) return fail("RATE_LIMITED");
+          toolCalls.add(event.call_id);
+          responsesWithTools.add(event.response_id);
+          const parsed = parseSoulCall(event.name, event.arguments);
+          let accepted = parsed.success;
+          if (parsed.success && parsed.data.name === "trigger_soul_soup_ritual") {
+            accepted = userTurnCount > 0 && !ritualCompleted;
+            if (accepted) ritualCompleted = true;
+          }
+          if (parsed.success && accepted) send({ type: "soul.action", responseId: event.response_id, callId: event.call_id, action: parsed.data });
+          upstreamSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: event.call_id, output: JSON.stringify({ accepted, ...(accepted ? {} : { reason: "Invalid arguments, no user story, or ritual already completed. Continue briefly without repeating tools." }) }) } });
         } else if (event.type === "response.audio_transcript.delta" && event.response_id && !canceled.has(event.response_id) && event.response_id === activeResponse) {
           const text = ((captions.get(event.response_id) ?? "") + (event.delta ?? "")).slice(-3000);
           captions.set(event.response_id, text);
@@ -246,6 +295,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         } else if (event.type === "conversation.item.input_audio_transcription.completed" && event.item_id && event.transcript && (!currentUserItem || event.item_id === currentUserItem)) {
           const userCaption: Caption = { sessionId: session.id, epoch, responseId: event.item_id, segmentId: event.item_id, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.transcript.slice(0, 3000), final: true };
           confirmedTurns = recordTurn(confirmedTurns, userCaption);
+          if (!userItems.has(event.item_id) && event.transcript.trim()) {
+            userItems.add(event.item_id); userTurnCount++; toolContinuations = 0;
+            if (isMengPo) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+          }
           emitCaption(userCaption);
         } else if (event.type === "response.done" && event.response && !canceled.has(event.response.id) && event.response.id === activeResponse) {
           const text = captions.get(event.response.id);
@@ -254,9 +307,18 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             confirmedTurns = recordTurn(confirmedTurns, charCaption);
             emitCaption(charCaption);
           }
-          send({ type: "response.done", responseId: event.response.id });
+          // Tool-only generations need one continuation after ALL calls finish, never one per call.
+          const continueSpeech = responsesWithTools.has(event.response.id) && (!responsesWithAudio.has(event.response.id) || canonicalResponses.has(event.response.id)) && toolContinuations < 4 && event.response.status !== "cancelled" && event.response.status !== "failed";
+          if (!continueSpeech) send({ type: "response.done", responseId: event.response.id });
           captions.delete(event.response.id);
+          responsesWithTools.delete(event.response.id); responsesWithAudio.delete(event.response.id);
           if (activeResponse === event.response.id) activeResponse = undefined;
+          if (continueSpeech) {
+            toolContinuations++;
+            upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+            upstreamSend({ type: "response.create" });
+          }
+          canonicalResponses.delete(event.response.id);
         } else if (event.type === "error") {
           const noActiveResponse = event.error?.code === "response_cancel_not_active" || (event.error?.code === "invalid_value" && event.error.type === "invalid_request_error" && event.error.param === "response.cancel" && event.error.message === "Conversation has no active response.");
           if (pendingCancelErrors > 0 && noActiveResponse) pendingCancelErrors--;
@@ -292,6 +354,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         epoch = event.epoch;
         clearTimeout(startTimer);
         resumeTurnsState = event.resumeTurns ?? [];
+        userTurnCount = Math.max(event.resumeUserTurns ?? 0, resumeTurnsState.filter(t => t.role === "user").length);
+        ritualCompleted = event.ritualCompleted ?? false;
         if (!upstream) {
           openUpstream();
         } else if (upstreamReady) {
@@ -313,6 +377,17 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
 
       if (event.type === "session.finalize") { beginFinalize(); return; }
 
+      if (event.type === "text.submit") {
+        if (finalizing || Date.now() >= session.captureUntil) return;
+        cancel();
+        const itemId = `text_${randomUUID()}`;
+        currentUserItem = itemId;
+        const caption: Caption = { sessionId: session.id, epoch, responseId: itemId, segmentId: itemId, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.text, final: true };
+        confirmedTurns = recordTurn(confirmedTurns, caption); emitCaption(caption);
+        upstreamSend({ type: "conversation.item.create", item: { id: itemId, type: "message", role: "user", content: [{ type: "input_text", text: event.text }] } });
+        upstreamSend({ type: "response.create" });
+        return;
+      }
       if (event.type === "audio.append") {
         if (finalizing) return;
         if (Date.now() >= session.captureUntil) return shutdown();

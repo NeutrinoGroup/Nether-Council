@@ -27,9 +27,9 @@ export const CHARACTERS: Record<CharacterId, CharacterMeta> = {
   "meng-po": {
     id: "meng-po",
     name: { zh: "孟婆", en: "Meng Po" },
-    role: { zh: "黄泉酒保 · 忘忧汤主理人", en: "Afterlife Bartender · Forgetful Brew Host" },
+    role: { zh: "万圣节特派 · 南瓜孟婆汤主理人", en: "Halloween Envoy · Pumpkin Soul Soup Host" },
     intro: {
-      zh: "今晚这碗南瓜忘忧汤，你想加点什么烦恼？放下今晚的疲惫，换个温暖的身份入梦。",
+      zh: "哟呵，南瓜肉桂拿铁味孟婆汤热着呢！今儿在人间受啥窝囊气了？",
       en: "What worldly burden would you like to ladle into tonight’s pumpkin soup? Let go of weariness and wake up to a gentler afterlife title.",
     },
     closingDirection: {
@@ -58,8 +58,8 @@ export const CHARACTERS: Record<CharacterId, CharacterMeta> = {
       badgeColor: "#f8c291",
     },
     openingInstruction: {
-      zh: "请用一句话温和向我打招呼，问我今晚想往南瓜汤里加什么烦恼。",
-      en: "Warmly greet me in one sentence and ask what burden I would like to stir into the pumpkin soup tonight.",
+      zh: "请按进门阶段热情招呼：哟，大万圣节不去要糖，来老婆子这儿啦？南瓜肉桂拿铁味孟婆汤热着呢，今儿受啥窝囊气了？只说这两句，先不调用仪式。",
+      en: "Greet me as a warm, cheeky cyber grandma in 2 short sentences. Mention Halloween and your pumpkin cinnamon latte soul soup, then ask what earthly nonsense upset me today. Do not start the ritual yet.",
     },
     modelUrl: "/models/meng-po.glb",
     posterUrl: "/posters/meng-po.png",
