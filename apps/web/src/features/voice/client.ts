@@ -26,9 +26,73 @@ export class VoiceClient {
   private finishReason: "claim" | "time_limit" = "claim";
   private closingResponse?: string;
   private closingDone = false;
+  private isPrewarming = false;
   private view: VoiceView = idleView;
   constructor(private notify: (view: VoiceView) => void) {}
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
+  async prewarm(
+    locale: Locale,
+    invite: string,
+    ref?: string,
+    characterId: CharacterId = "meng-po",
+    mode: "personal" | "host" = "personal"
+  ) {
+    if (this.disposed || this.socket) return;
+    this.isPrewarming = true;
+    try {
+      const response = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: this.abort.signal,
+        body: JSON.stringify({
+          characterId,
+          locale,
+          invite,
+          mode,
+          ...(ref ? { ref } : {}),
+        }),
+      });
+      if (!response.ok || this.disposed) { this.isPrewarming = false; return; }
+      const body = await response.json();
+      const session = Session.parse(body.session);
+      if (this.disposed) return;
+      this.update({ session });
+      this.connect(true);
+    } catch {
+      this.isPrewarming = false;
+    }
+  }
+  isPrewarmed(): boolean {
+    return this.isPrewarming && this.socket?.readyState === WebSocket.OPEN && !this.disposed && Boolean(this.view.session);
+  }
+  async activate(nickname = "") {
+    this.isPrewarming = false;
+    this.nickname = normalizeNickname(nickname);
+    this.startedAt = performance.now();
+    this.update({ phase: "permission" });
+    try {
+      await this.audio.start(audio => {
+        if (!this.ready || this.disposed || this.view.finalizing) return;
+        if ((this.socket?.bufferedAmount ?? 0) > 64_000) return this.fail("UPLOAD_BACKLOG");
+        this.send({ type: "audio.append", audio });
+      });
+      if (this.disposed) return;
+      this.update({ phase: "connecting" });
+      const session = this.view.session;
+      if (session) {
+        this.progressTimer = setInterval(() => this.refreshProgress(), 1000);
+        this.deadlineTimer = setTimeout(
+          () => this.view.canClaim ? this.finish("time_limit") : this.stop("time_limit"),
+          Math.max(0, session.captureUntil - Date.now())
+        );
+      }
+      const history = this.turns.slice(-4).map(t => ({ role: t.speaker === "user" ? ("user" as const) : ("assistant" as const), text: t.text }));
+      this.send({ type: "session.start", ...(history.length ? { resumeTurns: history } : {}) });
+    } catch (error) {
+      if (this.disposed) return;
+      this.fail(error instanceof DOMException && error.name === "NotAllowedError" ? "MICROPHONE_DENIED" : "CONNECTION_FAILED");
+    }
+  }
   async start(
     locale: Locale,
     invite: string,
@@ -38,6 +102,9 @@ export class VoiceClient {
     mode: "personal" | "host" = "personal",
     hostCredential?: string
   ) {
+    if (this.isPrewarmed()) {
+      return this.activate(nickname);
+    }
     this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now(); this.update({ phase: "permission" });
     try {
@@ -82,7 +149,7 @@ export class VoiceClient {
       this.fail(error instanceof DOMException && error.name === "NotAllowedError" ? "MICROPHONE_DENIED" : "CONNECTION_FAILED");
     }
   }
-  private connect() {
+  private connect(isPrewarm = false) {
     const session = this.view.session;
     if (this.disposed || !session) return;
     this.ready = false; this.seq = 0; this.lastSeq = -1;
@@ -94,7 +161,13 @@ export class VoiceClient {
     this.connectionTimer = setTimeout(() => { if (current()) { retryRequested = true; socket.close(); } }, 20000);
     socket.onopen = () => {
       const history = this.turns.slice(-4).map(t => ({ role: t.speaker === "user" ? "user" as const : "assistant" as const, text: t.text }));
-      if (current()) this.send({ type: "session.start", ...(history.length ? { resumeTurns: history } : {}) });
+      if (current()) {
+        if (isPrewarm) {
+          this.send({ type: "session.start", prewarm: true });
+        } else {
+          this.send({ type: "session.start", ...(history.length ? { resumeTurns: history } : {}) });
+        }
+      }
     };
     socket.onmessage = ({ data }) => {
       if (!current()) return;
@@ -105,8 +178,10 @@ export class VoiceClient {
       if (event.type === "session.ready") {
         if (event.session.id !== session.id || event.session.expiresAt !== session.expiresAt) return this.fail("INVALID_PROTOCOL");
         clearTimeout(this.connectionTimer); this.ready = true;
-        this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
-        this.telemetry("conversation_started");
+        if (!this.isPrewarming) {
+          this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
+          this.telemetry("conversation_started");
+        }
       } else if (event.type === "speech.started") {
         if (this.view.finalizing) return;
         this.interrupt(); this.update({ phase: "listening", userCaption: undefined });
@@ -150,6 +225,10 @@ export class VoiceClient {
     socket.onerror = () => { if (current()) { retryRequested = true; socket.close(); } };
     socket.onclose = ({ code }) => {
       if (!current()) return;
+      if (this.isPrewarming) {
+        this.isPrewarming = false;
+        return;
+      }
       clearTimeout(this.connectionTimer); this.ready = false; this.audio.clear(); this.activeResponse = undefined;
       this.update({ caption: undefined, userCaption: undefined });
       if (this.view.finalizing) return this.stop(this.finishReason);

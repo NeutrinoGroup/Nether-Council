@@ -62,6 +62,18 @@ export function VoiceTrial({
 
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
 
+  useEffect(() => {
+    if (!invite || !hydrated || active) return;
+    const c = new VoiceClient(setView);
+    client.current = c;
+    void c.prewarm(locale, invite, referral, characterId);
+    return () => {
+      if (client.current === c && !active) {
+        c.stop("character_change");
+      }
+    };
+  }, [invite, characterId, locale, hydrated, active, referral]);
+
   const changeLocale = (next: Locale) => {
     if (next === locale) return;
     resetVerdict();
@@ -83,11 +95,15 @@ export function VoiceTrial({
   const start = () => {
     if (!invite) return;
     resetVerdict();
+    const name = normalizeNickname(nickname);
+    setNickname(name);
+    if (client.current && client.current.isPrewarmed()) {
+      void client.current.activate(name);
+      return;
+    }
     client.current?.stop();
     const next = new VoiceClient(setView);
     client.current = next;
-    const name = normalizeNickname(nickname);
-    setNickname(name);
     void next.start(locale, invite, referral, name, characterId);
   };
 

@@ -22,7 +22,7 @@ test("bridge keeps uploading while speaking; barge-in drops old audio and closes
   client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(raw.toString())))); await once(client, "open");
   client.send(JSON.stringify({ ...envelope(0), type: "session.start" }));
   await waitFor(() => received.some(e => e.type === "session.ready"));
-  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "smart_turn_v2" } });
+  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "server_vad", silence_duration_ms: 350 } });
   expect(upstreamMessages.find(e => e.type === "conversation.item.create")?.item).toMatchObject({ id: "opening_request", role: "user" });
   remote!.send(JSON.stringify({ type: "response.created", response: { id: "a" } }));
   remote!.send(JSON.stringify({ type: "response.audio.delta", response_id: "a", delta: Buffer.alloc(100000).toString("base64") }));
@@ -135,4 +135,33 @@ test.each([false, true])("finalization is single-flight, stops capture and abort
     expect(requests.filter(e => e.type === "response.create")).toHaveLength(1);
   }
   expect(resultRequests).toBe(1);
+});
+
+test("prewarm establishes upstream session ahead of mic activation; activating triggers opening line immediately", async () => {
+  const provider = await server(); const downstream = await server();
+  const upstreamMessages: Record<string, unknown>[] = [];
+  provider.on("connection", ws => {
+    ws.send(JSON.stringify({ type: "session.created" }));
+    ws.on("message", raw => {
+      const event = JSON.parse(String(raw));
+      upstreamMessages.push(event);
+      if (event.type === "session.update") ws.send(JSON.stringify({ type: "session.updated" }));
+    });
+  });
+  downstream.on("connection", ws => {
+    void relayVoice(ws, session(), { realtimeKey: "fixture", realtimeUrl: url(provider), realtimeModel: "fixture" });
+  });
+  const client = new WebSocket(url(downstream));
+  const received: ReturnType<typeof ServerMessage.parse>[] = [];
+  client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(String(raw)))));
+  await once(client, "open");
+  client.send(JSON.stringify({ ...envelope(0), type: "session.start", prewarm: true }));
+  await waitFor(() => upstreamMessages.some(e => e.type === "session.update"));
+  await new Promise(r => setTimeout(r, 30));
+  expect(upstreamMessages.some(e => e.type === "conversation.item.create")).toBe(false);
+  expect(received.some(e => e.type === "session.ready")).toBe(false);
+  client.send(JSON.stringify({ ...envelope(1), type: "session.start" }));
+  await waitFor(() => received.some(e => e.type === "session.ready"));
+  expect(upstreamMessages.some(e => e.type === "conversation.item.create")).toBe(true);
+  client.close();
 });

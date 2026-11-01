@@ -34,7 +34,7 @@ export const AppError = z.strictObject({ code: ErrorCode, retryable: z.boolean()
 const envelope = { protocolVersion: z.literal(1), eventId: Id, sessionId: Id, epoch: z.number().int().nonnegative(), seq: z.number().int().nonnegative() };
 const pcmBase64 = z.string().min(4).max(60_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 export const ClientMessage = z.discriminatedUnion("type", [
-  z.strictObject({ ...envelope, type: z.literal("session.start"), resumeTurns: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().min(1).max(600) })).max(4).optional() }),
+  z.strictObject({ ...envelope, type: z.literal("session.start"), resumeTurns: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().min(1).max(600) })).max(4).optional(), prewarm: z.boolean().optional() }),
   z.strictObject({ ...envelope, type: z.literal("audio.append"), audio: pcmBase64 }),
   z.strictObject({ ...envelope, type: z.literal("response.cancel"), responseId: z.string().max(160).optional(), playedMs: z.number().int().nonnegative().max(235_000).optional() }),
   z.strictObject({ ...envelope, type: z.literal("session.finalize") }),
