@@ -137,7 +137,6 @@ export class VoiceClient {
   async activate(nickname = "") {
     this.isPrewarming = false;
     this.armFallback();
-    this.armFallback();
     this.demoLocale = this.view.session?.locale ?? this.demoLocale;
     this.nickname = normalizeNickname(nickname);
     this.startedAt = performance.now();
@@ -150,6 +149,7 @@ export class VoiceClient {
       }, this.options.localVad ? this.localSpeech : undefined);
       if (this.disposed || this.demo) { this.audio.stopCapture(); return; }
       this.update({ phase: "connecting" });
+      this.armFallback();
       const session = this.view.session;
       if (session) {
         this.progressTimer = setInterval(() => this.refreshProgress(), 1000);
@@ -189,6 +189,7 @@ export class VoiceClient {
       }, this.options.localVad ? this.localSpeech : undefined);
       if (this.disposed || this.demo) { this.audio.stopCapture(); return; }
       this.update({ phase: "connecting" });
+      this.armFallback();
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

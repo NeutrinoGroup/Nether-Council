@@ -12,6 +12,7 @@ import { getCharacter } from "@nether/party-core";
 import { CastCarousel } from "./CastCarousel";
 import type { CharacterId, Locale } from "@nether/contracts";
 import type { VoiceView } from "../voice/client";
+import { preloadAudioWorklet } from "../voice/audio/module";
 import { VoiceTrial } from "../voice/VoiceTrial";
 import { silentLevels } from "../voice/useAudioReactive";
 import type { EncounterPhase } from "../world3d/CameraRig";
@@ -68,6 +69,10 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
     if (character) params.set("character", character);
     return `${path}?${params}`;
   };
+
+  useEffect(() => {
+    void preloadAudioWorklet().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (phase === "landing") return;
