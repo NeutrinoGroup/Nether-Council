@@ -81,7 +81,7 @@ test("confirmed captions translate off the audio path; cancel, VAD and close inv
   emit({ type: "input_audio_buffer.speech_started", item_id: "u2" }); await waitFor(() => jobs[1].signal.aborted);
   emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u1", transcript: "A late old story." });
   emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u2", transcript: "The meeting was at midnight." });
-  await waitFor(() => jobs.length === 3); expect(received.filter(e => e.type === "caption" && e.caption.speaker === "user")).toHaveLength(1);
+  await waitFor(() => jobs.length === 3 && received.some(e => e.type === "caption" && e.caption.speaker === "user")); expect(received.filter(e => e.type === "caption" && e.caption.speaker === "user")).toHaveLength(1);
   respond("c"); await waitFor(() => jobs.length === 4 && received.some(e => e.type === "audio.delta" && e.responseId === "c"));
   resolve(2); await waitFor(() => received.some(e => e.type === "caption.translation"));
   expect(received.filter(e => e.type === "caption.translation")).toMatchObject([{ translation: { responseId: "u2", status: "ready" } }]);
