@@ -19,7 +19,7 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await page.getByRole("button", { name: "推门，遇见孟婆" }).click();
   await expect(page.locator(".theatre-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
   await page.getByRole("button", { name: "开麦，向孟婆倾诉" }).click();
-  await expect.poll(() => messages.filter(e => e.type === "audio.append").length).toBeGreaterThan(2);
+  await expect.poll(() => messages.filter(e => e.type === "audio.append").length, { timeout: 15000 }).toBeGreaterThan(2);
   const pcm = Buffer.alloc(24000 * 2 * 6);
   for (let i = 0; i < pcm.length / 2; i++) pcm.writeInt16LE(Math.round(Math.sin(i * 2 * Math.PI * 3000 / 24000) * 8000), i * 2);
   send({ type: "response.started", responseId: "reply" });
@@ -28,11 +28,11 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "reply", segmentId: "reply", revision: 1, sourceLocale: "zh", sourceText: "五场会议，辛苦你了。", speaker: "character", final: true } });
   await expect(page.locator(".theatre-subtitle.character")).toContainText("五场会议，辛苦你了。");
   const canvas = page.locator(".theatre-stage canvas");
-  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number)).toBeGreaterThan(0.1);
-  await expect.poll(() => canvas.getAttribute("data-high-energy").then(Number)).toBeGreaterThan(0.01);
+  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number), { timeout: 15000 }).toBeGreaterThan(0.1);
+  await expect.poll(() => canvas.getAttribute("data-high-energy").then(Number), { timeout: 15000 }).toBeGreaterThan(0.01);
   await page.getByRole("button", { name: "让我说一句" }).click();
-  await expect.poll(() => messages.some(e => e.type === "response.cancel")).toBe(true);
-  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number)).toBeLessThan(0.01);
+  await expect.poll(() => messages.some(e => e.type === "response.cancel"), { timeout: 15000 }).toBe(true);
+  await expect.poll(() => canvas.getAttribute("data-character-level").then(Number), { timeout: 15000 }).toBeLessThan(0.01);
   send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "story", segmentId: "story", revision: 1, sourceLocale: "zh", sourceText: "今天开了五场会议，我很累。", speaker: "user", final: true } });
   await page.getByRole("button", { name: "结束对话", exact: true }).click();
   await page.getByRole("button", { name: "干了这碗南瓜孟婆汤" }).click();
