@@ -8,7 +8,7 @@ loadLocalEnv();
 const flag = process.argv.indexOf("--url"); const base = process.argv[flag + 1];
 if (flag < 0 || !base?.startsWith("https://")) throw new Error("Provide --url https://<preview>");
 const target = new URL(base);
-if (!(target.hostname === "nether-council.vercel.app" || (target.hostname.startsWith("nether-council-") && target.hostname.endsWith("-oodai.vercel.app")))) throw new Error("Use this project’s production or preview hostname");
+if (!(target.hostname === "nether-council.vercel.app" || target.hostname === "ghost.oodai.space" || (target.hostname.startsWith("nether-council-") && target.hostname.endsWith("-oodai.vercel.app")))) throw new Error("Use this project’s production or preview hostname");
 const trustedHeaders: Record<string, string> = process.env.VERCEL_OIDC_TOKEN ? { "x-vercel-trusted-oidc-idp-token": process.env.VERCEL_OIDC_TOKEN } : {};
 const origin = target.origin; const now = Date.now();
 const invite = signTicket({ kind: "campaign", campaignId: process.env.NEXT_PUBLIC_CAMPAIGN_ID ?? "halloween-2026", issuedAt: now, expiresAt: now + 600000 }, process.env.CAMPAIGN_SIGNING_SECRET ?? "");
