@@ -14,7 +14,7 @@ if (!/^https:\/\/nether-council(?:-[a-z0-9-]+)?\.vercel\.app$/.test(origin)) thr
 if ((process.env.CAMPAIGN_SIGNING_SECRET?.length ?? 0) < 32) throw new Error("Campaign signing secret is missing");
 const selected = flag("--locale");
 if (selected && selected !== "zh" && selected !== "en") throw new Error("Choose zh or en");
-const browser = await chromium.launch({ headless: true, ...(existsSync("/Applications/Google Chrome.app") ? { channel: "chrome" } : {}) });
+const browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"], ...(existsSync("/Applications/Google Chrome.app") ? { channel: "chrome" } : {}) });
 const reports: Record<string, unknown>[] = [];
 let failed = false;
 try {
@@ -29,18 +29,19 @@ try {
       });
       await context.addCookies(cookies);
     }
-    await context.addInitScript(() => {
+    // Keep injected JS as source: tsx's keepNames helper is not in the browser.
+    await context.addInitScript({ content: `(() => {
       // A controllable synthetic MediaStream passes through the REAL capture Worklet.
       // No personal microphone or story is captured by this test.
-      let input: AudioContext | undefined;
-      let destination: MediaStreamAudioDestinationNode | undefined;
+      let input;
+      let destination;
       navigator.mediaDevices.getUserMedia = async () => {
-        input = new AudioContext({ sampleRate: 16000 });
+        input = new AudioContext();
         destination = input.createMediaStreamDestination();
         await input.resume();
         return destination.stream;
       };
-      Object.assign(window, { feedFixture: async (base64: string) => {
+      window.feedFixture = async (base64) => {
         if (!input || !destination) throw new Error("Synthetic stream is not ready");
         const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
         const view = new DataView(bytes.buffer);
@@ -49,12 +50,13 @@ try {
         for (let i = 0; i < channel.length; i++) channel[i] = view.getInt16(i * 2, true) / 32768;
         const source = input.createBufferSource(); source.buffer = buffer;
         source.connect(destination); source.start();
-      } });
-    });
+      };
+      window.ncSyntheticMicrophone = true;
+    })();` });
     const page = await context.newPage(); page.setDefaultTimeout(30000);
     const startedAt = Date.now();
     const report: Record<string, unknown> = { at: new Date().toISOString(), origin, locale, browser: browser.version(), platform: process.platform, viewport: mobile ? "390x844 on Mac; NOT a physical phone" : "1440x1000", kind: "real_qwen_real_worklet_synthetic_media_stream_not_human_acceptance" };
-    let upload = 0, audio = 0, vad = 0, done = 0, userTurns = 0, characterTurns = 0, translationsReady = 0;
+    let upload = 0, audio = 0, vad = 0, done = 0, userTurns = 0, characterTurns = 0, translationsReady = 0, webSocketConnections = 0;
     let resultValid = false, resultFallback: boolean | undefined;
     let uploadDuringPlayback = 0;
     let lastAudioAt = 0;
@@ -62,6 +64,7 @@ try {
     const codes: string[] = [];
     const users = new Set<string>();
     page.on("websocket", socket => {
+      if (new URL(socket.url()).pathname === "/api/ws") webSocketConnections++;
       socket.on("framesent", ({ payload }) => {
         try { const event = JSON.parse(String(payload)); if (event.type === "audio.append") { upload++; if (Date.now() - lastAudioAt < 250) uploadDuringPlayback++; } } catch {}
       });
@@ -95,6 +98,8 @@ try {
       await page.getByRole("link", { name: locale === "zh" ? "推门，遇见孟婆" : "Step inside. Meet Meng Po" }).click();
       report.step = "model";
       await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 30000 }).toBeGreaterThan(29000);
+      expect(await page.evaluate(() => typeof (window as unknown as { feedFixture?: unknown }).feedFixture)).toBe("function");
+      expect(await page.evaluate(() => (window as unknown as { ncSyntheticMicrophone?: boolean }).ncSyntheticMicrophone)).toBe(true);
       await page.getByRole("button", { name: locale === "zh" ? "开麦，找孟婆聊聊" : "Turn on mic & meet Meng Po" }).click();
       report.step = "opening";
       await expect.poll(() => audio, { timeout: 45000 }).toBeGreaterThan(2);
@@ -139,12 +144,15 @@ try {
       report.step = "complete";
     } catch (error) {
       failed = true; report.status = "failed"; report.errorType = error instanceof Error ? error.name : "unknown";
+      report.errorSummary = error instanceof Error ? error.message.split("\n").find(Boolean)?.replace(/https?:\/\/\S+/g, "[url]").replace(/[A-Za-z0-9_+/=-]{80,}/g, "[redacted]").slice(0, 240) : "unknown";
       report.visibleState = await page.locator(".live-state").innerText().catch(() => "unavailable");
+      report.visibleError = await page.locator(".error-note").innerText({ timeout: 1000 }).catch(() => "unavailable");
     } finally {
-      Object.assign(report, { uploadChunks: upload, audioChunks: audio, uploadDuringRecentAudio: uploadDuringPlayback, vadEvents: vad, userTurns, characterTurns, translationsReady, resultSchemaValid: resultValid, resultFallback, errorCodes: codes, elapsedSeconds: Math.floor((Date.now() - startedAt) / 1000) });
+      Object.assign(report, { webSocketConnections, uploadChunks: upload, audioChunks: audio, uploadDuringRecentAudio: uploadDuringPlayback, vadEvents: vad, userTurns, characterTurns, translationsReady, resultSchemaValid: resultValid, resultFallback, errorCodes: codes, elapsedSeconds: Math.floor((Date.now() - startedAt) / 1000) });
       reports.push(report); console.log(JSON.stringify(report));
       await context.close();
     }
+    if (failed) break; // Do not start another billable encounter after a failed boundary.
   }
 } finally {
   await browser.close(); mkdirSync("artifacts/verification", { recursive: true });
