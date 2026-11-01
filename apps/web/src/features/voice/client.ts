@@ -22,6 +22,10 @@ export class VoiceClient {
   private progressTimer?: ReturnType<typeof setInterval>;
   private startedAt = 0;
   private result?: IdentityResult;
+  private finishTimer?: ReturnType<typeof setTimeout>;
+  private finishReason: "claim" | "time_limit" = "claim";
+  private closingResponse?: string;
+  private closingDone = false;
   private view: VoiceView = idleView;
   constructor(private notify: (view: VoiceView) => void) {}
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
@@ -39,7 +43,7 @@ export class VoiceClient {
     try {
       await this.audio.start(audio => {
         // Upload continues while model audio plays; only explicit mute pauses capture delivery.
-        if (!this.ready || this.disposed) return;
+        if (!this.ready || this.disposed || this.view.finalizing) return;
         if ((this.socket?.bufferedAmount ?? 0) > 64_000) return this.fail("UPLOAD_BACKLOG");
         this.send({ type: "audio.append", audio });
       });
@@ -64,11 +68,14 @@ export class VoiceClient {
       if (this.disposed) return;
       try {
         const cached = sessionStorage.getItem(`nc_result_${session.id}`);
-        if (cached) this.result = IdentityResult.parse(JSON.parse(cached));
+        if (cached) {
+          const result = IdentityResult.parse(JSON.parse(cached));
+          if (result.sessionId === session.id && result.characterId === session.characterId) this.result = result;
+        }
       } catch {}
       this.update({ session, ...(this.result ? { result: this.result } : {}) });
       this.progressTimer = setInterval(() => this.refreshProgress(), 1000);
-      this.deadlineTimer = setTimeout(() => this.stop("time_limit"), Math.max(0, session.captureUntil - Date.now()));
+      this.deadlineTimer = setTimeout(() => this.view.canClaim ? this.finish("time_limit") : this.stop("time_limit"), Math.max(0, session.captureUntil - Date.now()));
       this.connect();
     } catch (error) {
       if (this.disposed) return;
@@ -101,11 +108,14 @@ export class VoiceClient {
         this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
         this.telemetry("conversation_started");
       } else if (event.type === "speech.started") {
+        if (this.view.finalizing) return;
         this.interrupt(); this.update({ phase: "listening", userCaption: undefined });
       } else if (event.type === "response.started") {
+        if (this.view.finalizing && !this.result) { this.canceled.add(event.responseId); return; }
         this.activeResponse = event.responseId; this.update({ caption: undefined });
+        if (this.view.finalizing && this.result) this.closingResponse = event.responseId;
       } else if (event.type === "audio.delta") {
-        if (this.canceled.has(event.responseId)) return;
+        if (this.canceled.has(event.responseId) || (this.view.finalizing && !this.result)) return;
         this.activeResponse = event.responseId;
         try { this.audio.play(event.audio); } catch { return this.fail("PLAYBACK_FAILED"); }
         this.update({ phase: "speaking", ...(this.view.firstAudioMs === undefined ? { firstAudioMs: Math.round(performance.now() - this.startedAt) } : {}) });
@@ -125,10 +135,14 @@ export class VoiceClient {
         if (translation.speaker === "user") this.update({ userCaption: applyTranslation(this.view.userCaption, translation) });
         else this.update({ caption: applyTranslation(this.view.caption, translation) });
       } else if (event.type === "result") {
+        if (!this.view.finalizing || this.result || event.result.sessionId !== session.id || event.result.characterId !== session.characterId) return;
         this.result = event.result;
         try { sessionStorage.setItem(`nc_result_${event.result.sessionId}`, JSON.stringify(event.result)); } catch {}
-        this.update({ result: event.result, finalizing: false });
+        this.update({ result: event.result });
+      } else if (event.type === "response.done") {
+        if (this.view.finalizing && this.result && event.responseId === this.closingResponse) { this.closingDone = true; this.finishWhenDrained(); }
       } else if (event.type === "error") {
+        if (this.view.finalizing) { this.stop(this.finishReason); return; }
         if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
       }
       // response.done marks generation, not the end of actual scheduled playback.
@@ -138,6 +152,7 @@ export class VoiceClient {
       if (!current()) return;
       clearTimeout(this.connectionTimer); this.ready = false; this.audio.clear(); this.activeResponse = undefined;
       this.update({ caption: undefined, userCaption: undefined });
+      if (this.view.finalizing) return this.stop(this.finishReason);
       if ((code === 1000 && !retryRequested) || Date.now() >= session.captureUntil) return this.stop(Date.now() >= session.captureUntil ? "time_limit" : "user");
       if (this.view.reconnects >= RECONNECT_DELAYS_MS.length) return this.fail("RECONNECT_EXHAUSTED");
       const delay = RECONNECT_DELAYS_MS[this.view.reconnects] + Math.random() * 250;
@@ -154,10 +169,12 @@ export class VoiceClient {
     const at = performance.now(); this.audio.clear();
     if (this.activeResponse) { this.canceled.add(this.activeResponse); this.send({ type: "response.cancel", responseId: this.activeResponse }); this.activeResponse = undefined; }
     this.update({ phase: this.ready ? "listening" : this.view.phase, caption: undefined, interruptedAt: at, stopMs: Math.round(performance.now() - at) });
+    if (this.view.finalizing && this.result) this.stop(this.finishReason);
   }
   mute(value: boolean) { this.audio.mute(value); this.update({ muted: value }); }
   rms() { return this.audio.rms(); }
   measurePlayback() {
+    this.finishWhenDrained();
     if (this.view.phase === "speaking" && !this.audio.isPlaying()) this.update({ phase: "listening" });
     return this.audio.rms();
   }
@@ -170,11 +187,16 @@ export class VoiceClient {
     const elapsed = Math.max(0, Date.now() - (this.view.session?.createdAt ?? Date.now()));
     this.update({ ...encounterProgress(this.turns, elapsed), elapsedSeconds: Math.floor(elapsed / 1000) });
   }
-  finish() {
-    if (this.view.canClaim) {
-      this.send({ type: "session.finalize" });
-      this.stop("claim");
-    }
+  private finishWhenDrained() { if (this.view.finalizing && this.closingDone && !this.audio.isPlaying()) this.stop(this.finishReason); }
+  finish(reason: "claim" | "time_limit" = "claim") {
+    if (!this.view.canClaim || this.disposed || this.view.finalizing) return;
+    this.finishReason = reason;
+    if (!this.ready || this.socket?.readyState !== WebSocket.OPEN) return this.stop(reason);
+    this.interrupt(); this.audio.stopCapture();
+    clearTimeout(this.deadlineTimer); clearInterval(this.progressTimer);
+    this.update({ phase: "listening", finalizing: true, muted: true });
+    this.finishTimer = setTimeout(() => this.stop(reason), Math.max(0, Math.min(55_000, this.view.session!.expiresAt - Date.now())));
+    this.send({ type: "session.finalize" });
   }
   private fail(error: string) { this.stop("error"); this.update({ phase: "error", error }); }
   stop(reason: NonNullable<VoiceView["endReason"]> = "user") {
@@ -185,7 +207,7 @@ export class VoiceClient {
       draft = EncounterDraft.parse({ sessionId: session.id, characterId: session.characterId, locale: session.locale, nickname: this.nickname, createdAt: session.createdAt, endedAt: Date.now(), turns: this.turns.map(t => ({ ...t })) });
     }
     this.send({ type: "session.end" }); this.disposed = true; this.ready = false;
-    this.abort.abort(); clearInterval(this.progressTimer); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.connectionTimer);
+    this.abort.abort(); clearInterval(this.progressTimer); clearTimeout(this.reconnectTimer); clearTimeout(this.deadlineTimer); clearTimeout(this.connectionTimer); clearTimeout(this.finishTimer);
     this.socket?.close(); this.audio.stop();
     this.update({ phase: "ended", caption: undefined, userCaption: undefined, draft, result: this.result, finalizing: false, endReason: reason });
   }

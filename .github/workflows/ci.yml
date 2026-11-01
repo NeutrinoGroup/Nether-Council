@@ -6,6 +6,32 @@ on:
 permissions:
   contents: read
 jobs:
+  data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.11.13"
+          python-version: "3.12"
+          enable-cache: false
+      - run: uv sync --project services/data --frozen
+      - run: uv run --project services/data --frozen pytest services/data/tests -q
+        env:
+          NETHER_TEST_DATABASE_URL: postgresql://postgres:local-ci-only@localhost:5432/postgres?sslmode=disable
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15

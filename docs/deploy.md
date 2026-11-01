@@ -56,7 +56,7 @@
 # 执行 ESLint 语法检查、TypeScript 跨包类型校验、Vitest 单元/集成测试、资产验证及 Next.js 构建
 pnpm check
 
-# 执行跨桌面与手机视口 Playwright 端到端交互测试（20 项测试）
+# 执行跨桌面与手机视口 Playwright 端到端交互测试（28 项，使用受控 API / WS）
 pnpm test:e2e
 ```
 
@@ -80,3 +80,13 @@ pnpm invite:create --url https://nether-council.vercel.app --hours 24
 # 启动 10 个独立客户端进行 3 轮真实语音交互（持续 120 秒）
 pnpm test:load --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
 ```
+
+### 4.5 单角色真实浏览器验证（产生 API 用量）
+
+```bash
+pnpm verify:real --real-provider --url https://<本项目预览部署>.vercel.app --mobile-soak
+```
+
+读取本机已有签名配置，使用真实 Chrome、AudioWorklet 和 Qwen；输入来自仓库合成语音素材。中文／英文各三轮，检查边播边传、VAD 插话、字幕翻译、身份结果、告别播放结束、PNG 下载和卡片二维码解码后的入场。中文分支在 Mac 手机尺寸视口运行至少两分钟，不能替代实体手机与真人验收。仅输出状态和计数，不输出故事或签名入口。预览站点受 Vercel Authentication 保护时，以 CLI 获取的 Netscape cookie 文件传入 `--cookies <文件>`，不得将 cookie 提交入库。
+
+三表 Python 持久化方案见 [ADR 0008](adr/0008-three-table-python-data-layer.md)，尚未部署接线。实时音频继续沿用现有中继。

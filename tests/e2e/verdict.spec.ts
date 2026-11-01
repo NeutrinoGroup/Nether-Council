@@ -1,12 +1,15 @@
 import { expect, test, type WebSocketRoute } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { readCardQr } from "../../scripts/lib/read-card-qr";
 
 const id = "44444444-4444-4444-8444-444444444444";
 
 test("encounter wrap-up reveals schema-valid identity card with PNG download and sharing", async ({ page }, info) => {
+  test.setTimeout(45000);
   let socket: WebSocketRoute | undefined;
   let sentSeq = 0;
   const messages: Record<string, unknown>[] = [];
+  let httpRecoveries = 0;
   const now = Date.now();
   const session = {
     id,
@@ -50,7 +53,15 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
       },
     })
   );
-  await page.route("**/api/verdict", route => route.fulfill({ json: { result: mockResult } }));
+  await page.route("**/api/verdict", route => { httpRecoveries++; return route.fulfill({ json: { result: mockResult } }); });
+  await page.addInitScript(() => {
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      const stream = await capture(constraints);
+      Object.assign(window, { trialTracks: stream.getTracks() });
+      return stream;
+    };
+  });
 
   await page.routeWebSocket("**/api/ws", ws => {
     socket = ws;
@@ -71,17 +82,20 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
         );
       }
       if (event.type === "session.finalize") {
-        socket?.send(
-          JSON.stringify({
+        setTimeout(() => {
+          const send = (payload: object) => socket?.send(JSON.stringify({
             protocolVersion: 1,
             eventId: crypto.randomUUID(),
             sessionId: id,
             epoch: 0,
             seq: sentSeq++,
-            type: "result",
-            result: mockResult,
-          })
-        );
+            ...payload,
+          }));
+          send({ type: "result", result: mockResult });
+          send({ type: "response.started", responseId: "farewell" });
+          for (let i = 0; i < 4; i++) send({ type: "audio.delta", responseId: "farewell", audio: Buffer.alloc(24000).toString("base64") });
+          send({ type: "response.done", responseId: "farewell" });
+        }, 1200);
       }
     });
   });
@@ -127,10 +141,14 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
 
   // Verify session.finalize was sent
   await expect.poll(() => messages.some(e => e.type === "session.finalize")).toBe(true);
+  expect(messages.some(e => e.type === "session.end")).toBe(false);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { trialTracks: MediaStreamTrack[] }).trialTracks.every(track => track.readyState === "ended"))).toBe(true);
 
   // Verify IdentityCard is displayed
   const cardSection = page.locator(".identity-card-section");
-  await expect(cardSection).toBeVisible();
+  await expect(cardSection).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("对话已结束", { exact: true })).toBeVisible({ timeout: 15000 });
+  expect(httpRecoveries).toBe(0);
 
   // Check card controls and interactions
   await expect(page.getByRole("button", { name: "下载身份卡 PNG" })).toBeVisible();
@@ -146,6 +164,7 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
   const cardNicknameInput = page.locator("#card-nickname-input");
   await cardNicknameInput.fill("摸鱼仙尊");
   await cardNicknameInput.blur();
+  await expect.poll(() => readCardQr(page)).toBe("http://localhost:3000/play?invite=mock-invite&ref=mock-ref-token&character=meng-po&lang=zh");
 
   // Test copy share text
   await page.getByRole("button", { name: "复制分享文案" }).click();
@@ -160,4 +179,33 @@ test("encounter wrap-up reveals schema-valid identity card with PNG download and
   await page.evaluate(() => document.fonts.ready);
   mkdirSync(".impeccable/review", { recursive: true });
   await page.screenshot({ path: `.impeccable/review/${info.project.name}-verdict-card.png`, fullPage: true });
+});
+
+test("late HTTP recovery cannot attach an old identity after a character change", async ({ page }) => {
+  let socket: WebSocketRoute | undefined;
+  let pending: import("@playwright/test").Route | undefined;
+  let seq = 0;
+  const now = Date.now();
+  const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  const send = (payload: object) => socket!.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...payload }));
+  await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
+  await page.route("**/api/events", route => route.fulfill({ status: 202 }));
+  await page.route("**/api/verdict", route => { pending = route; });
+  await page.routeWebSocket("**/api/ws", ws => {
+    socket = ws;
+    ws.onMessage(raw => { if (JSON.parse(String(raw)).type === "session.start") send({ type: "session.ready", session }); });
+  });
+  await page.goto("/play?invite=test-fixture&lang=en");
+  await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
+  await expect(page.getByText("Listening to you", { exact: true })).toBeVisible();
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss scheduled five meetings after midnight.", speaker: "user", final: true } });
+  await expect(page.getByRole("button", { name: "Keep my story" })).toBeVisible();
+  await page.getByRole("button", { name: "End conversation", exact: true }).click();
+  await expect.poll(() => Boolean(pending)).toBe(true);
+  await page.getByRole("radio", { name: "Hei Wuchang", exact: true }).check();
+  await pending!.fulfill({ json: { result: { id: crypto.randomUUID(), sessionId: id, characterId: "meng-po", generatedAt: now, fallback: false, title: { zh: "旧故事身份", en: "Old Story Identity" }, verdict: { zh: "把夜会留给南瓜汤。", en: "Leave that late meeting in the soup." }, warmClosing: { zh: "晚安。", en: "Rest well." }, tags: [{ zh: "安睡", en: "Rest" }, { zh: "散场", en: "Adjourned" }], sourceTurnIds: ["u1"] } } }).catch(() => {});
+  await expect(page.getByRole("heading", { name: "Hei Wuchang", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Turn on mic & meet Hei Wuchang" })).toBeEnabled();
+  await expect(page.locator(".identity-card-section")).toHaveCount(0);
+  await expect(page.locator(".error-note[role=alert]")).toHaveCount(0);
 });

@@ -199,6 +199,7 @@ export async function generateIdentity(
     }
   }
 
+  if (signal?.aborted) throw new Error("GENERATION_ABORTED");
   // Fallback if model generation repeatedly failed
   return createFallbackIdentity(session, storyTurns[0].id);
 }

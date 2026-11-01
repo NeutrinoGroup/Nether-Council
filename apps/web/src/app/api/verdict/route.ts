@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   let input: z.infer<typeof Input>;
   try {
     const raw = await request.text();
+    if (Buffer.byteLength(raw, "utf8") > 65_536) return new Response(null, { status: 413 });
     input = Input.parse(JSON.parse(raw));
   } catch {
     return Response.json({ error: "INVALID_MESSAGE" }, { status: 400 });
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
   if (input.sessionId !== claims.session.id) return Response.json({ error: "SESSION_MISMATCH" }, { status: 403 });
 
   try {
-    const result = await generateIdentity(claims.session, input.turns, config.text);
+    const result = await generateIdentity(claims.session, input.turns, config.text, request.signal);
     return Response.json({ result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof Error && error.message === "NO_STORY") {

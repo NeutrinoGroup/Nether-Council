@@ -9,6 +9,7 @@ export class AudioEngine {
   private nextAt = 0;
   private muted = false;
   private disposed = false;
+  private capturing = false;
   async start(onPcm: (audio: string) => void) {
     // Invoke from a real click: resume the output before awaiting permission.
     this.context = new AudioContext({ latencyHint: "interactive" });
@@ -19,11 +20,12 @@ export class AudioEngine {
       await this.context.audioWorklet.addModule("/worklets/capture.js");
       this.source = this.context.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.context, "nether-capture");
+      this.capturing = true;
       this.silent = this.context.createGain(); this.silent.gain.value = 0;
       this.source.connect(this.capture); this.capture.connect(this.silent).connect(this.context.destination);
       this.analyser = this.context.createAnalyser(); this.analyser.fftSize = 256; this.analyser.connect(this.context.destination);
       this.capture.port.onmessage = ({ data }: MessageEvent<ArrayBuffer>) => {
-        if (this.disposed || this.muted) return;
+        if (this.disposed || this.muted || !this.capturing) return;
         const bytes = new Uint8Array(data);
         let text = ""; for (const byte of bytes) text += String.fromCharCode(byte);
         onPcm(btoa(text));
@@ -58,11 +60,16 @@ export class AudioEngine {
     for (const node of this.playing) { node.onended = null; try { node.stop(); } catch { /* Already ended. */ } node.disconnect(); }
     this.playing.clear(); this.nextAt = 0;
   }
+  stopCapture() {
+    this.capturing = false;
+    if (this.capture) this.capture.port.onmessage = null;
+    this.capture?.disconnect(); this.source?.disconnect(); this.silent?.disconnect();
+    this.stream?.getTracks().forEach(track => track.stop());
+    this.capture = undefined; this.source = undefined; this.silent = undefined;
+  }
   stop() {
     if (this.disposed) return; this.disposed = true; this.clear();
-    if (this.capture) this.capture.port.onmessage = null;
-    this.capture?.disconnect(); this.source?.disconnect(); this.silent?.disconnect(); this.analyser?.disconnect();
-    this.stream?.getTracks().forEach(track => track.stop());
+    this.stopCapture(); this.analyser?.disconnect();
     if (this.context && this.context.state !== "closed") void this.context.close();
   }
 }
