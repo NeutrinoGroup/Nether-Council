@@ -4,7 +4,8 @@ import Image from "next/image";
 import { Component, useCallback, useRef, useState, type ReactNode } from "react";
 import type { CharacterId, Locale } from "@nether/contracts";
 import { getCharacter } from "@nether/party-core";
-import type { VoiceView } from "../voice/client";
+import { SoulSoupOverlay } from "./SoulSoupOverlay";
+import type { SoulSoupView, VoiceView } from "../voice/client";
 
 const Scene = dynamic(() => import("./MengPoScene"), { ssr: false });
 
@@ -19,10 +20,12 @@ export type SceneStats = {
 
 export type StageProps = {
   characterId?: CharacterId;
+  soup?: SoulSoupView;
   locale: Locale;
   phase: VoiceView["phase"];
   interruptedAt?: number;
   celebrating?: boolean;
+  scene?: VoiceView["scene"];
   readRms: () => number;
 };
 
@@ -76,9 +79,13 @@ export function CharacterStage(props: StageProps) {
     <div
       className="character-stage"
       ref={container}
-      role="img"
+      role="group"
       aria-label={props.locale === "zh" ? `${meta.name.zh} 角色舞台` : `${meta.name.en} character stage`}
       data-model-loaded={isLoaded}
+      data-mood={props.scene?.mood ?? "calm"}
+      data-ritual={props.scene?.blessing ? "finished" : props.scene?.worry ? "worry" : "idle"}
+      data-soul-mood={props.soup?.mood ?? "healing"}
+      data-soul-ritual={Boolean(props.soup?.ritual)}
     >
       <SceneBoundary characterId={characterId} locale={props.locale}>
         {!isLoaded && <Poster characterId={characterId} locale={props.locale} />}
@@ -91,6 +98,7 @@ export function CharacterStage(props: StageProps) {
           />
         )}
       </SceneBoundary>
+      {characterId === "meng-po" && <SoulSoupOverlay soup={props.soup} locale={props.locale} />}
     </div>
   );
 }

@@ -1,7 +1,11 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MutableRefObject } from "react";
 import type { CharacterId, Locale } from "@nether/contracts";
 import { CHARACTERS, CHARACTER_IDS, getCharacter, normalizeNickname } from "@nether/party-core";
+import { useAudioReactive, type AudioLevels } from "./useAudioReactive";
+import { ImmersiveEncounter } from "./ImmersiveEncounter";
+import { VoiceTextInput } from "./VoiceTextInput";
+import { preloadDemo } from "./demo";
 import { VoiceClient, idleView, type VoiceView } from "./client";
 import { CharacterStage } from "../world3d/CharacterStage";
 import { BilingualCaption } from "../captions/BilingualCaption";
@@ -23,11 +27,13 @@ export function VoiceTrial({
   initialCharacter = "meng-po",
   invite,
   referral,
+  immersive,
 }: {
   initialLocale: Locale;
   initialCharacter?: CharacterId;
   invite: string;
   referral?: string;
+  immersive?: { audio: MutableRefObject<AudioLevels>; onView?: (view: VoiceView) => void; onClose: () => void };
 }) {
   const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot);
   const [locale, setLocale] = useState<Locale>(initialLocale);
@@ -36,6 +42,8 @@ export function VoiceTrial({
   const [view, setView] = useState<VoiceView>(idleView);
   const { generatingVerdict, verdictError, claimVerdict, resetVerdict } = useVerdict(view, setView, locale);
   const client = useRef<VoiceClient | null>(null);
+  const onView = immersive?.onView;
+  useEffect(() => { onView?.(view); }, [onView, view]);
   const band = useRef<HTMLDivElement>(null);
 
   const charMeta = getCharacter(characterId);
@@ -60,7 +68,24 @@ export function VoiceTrial({
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  const readNodes = useCallback(() => client.current?.analysers() ?? {}, []);
+  const audio = useAudioReactive(readNodes, immersive?.audio);
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
+
+  useEffect(() => { preloadDemo(locale); }, [locale]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!event.shiftKey || event.code !== "KeyD" || event.repeat || event.ctrlKey || event.altKey || event.metaKey || target?.closest("input, textarea, [contenteditable=true]")) return;
+      event.preventDefault();
+      client.current?.stop();
+      const next = new VoiceClient(setView, { demoFallback: true });
+      client.current = next; next.enterDemo("MANUAL", locale);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [locale]);
 
   const changeLocale = (next: Locale) => {
     if (next === locale) return;
@@ -86,7 +111,7 @@ export function VoiceTrial({
     const name = normalizeNickname(nickname);
     setNickname(name);
     client.current?.stop();
-    const next = new VoiceClient(setView);
+    const next = new VoiceClient(setView, { demoFallback: true });
     client.current = next;
     void next.start(locale, invite, referral, name, characterId);
   };
@@ -105,6 +130,8 @@ export function VoiceTrial({
     }
     return t.states[view.phase];
   };
+
+  if (immersive) return <ImmersiveEncounter characterId={characterId} view={view} locale={locale} invite={invite} client={client} audio={audio} start={start} hydrated={hydrated} generatingVerdict={generatingVerdict} verdictError={verdictError} claimVerdict={claimVerdict} onClose={immersive.onClose} />;
 
   return (
     <main className="party-shell" data-active={active} lang={locale === "zh" ? "zh-CN" : "en"}>
@@ -136,15 +163,20 @@ export function VoiceTrial({
             characterId={characterId}
             locale={locale}
             phase={view.phase}
+            soup={view.soup}
             interruptedAt={view.interruptedAt}
             readRms={readRms}
+            scene={view.scene}
           />
+          {view.scene?.worry && <p className="ritual-worry" role="status">{view.scene.worry}</p>}
+          {view.scene?.blessing && <p className="ritual-blessing" role="status">{view.scene.blessing}</p>}
           <p className="opening-line">{charMeta.intro[locale]}</p>
           <div className="live-state" role="status">
             <span className={active ? "state-dot active" : "state-dot"} aria-hidden="true" />
             {characterStateLabel()}
             {view.phase === "reconnecting" ? ` · ${view.reconnects}/3` : ""}
           </div>
+          <VoiceTextInput view={view} locale={locale} client={client} />
           <div className="caption-area">
             <BilingualCaption
               title={locale === "zh" ? `${charMeta.name.zh}的话` : `${charMeta.name.en} says`}
@@ -318,7 +350,7 @@ export function VoiceTrial({
                 {locale === "zh" ? "收好故事" : "Keep my story"}
               </button>
             )}
-            <button disabled={view.finalizing} onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>
+            <button disabled={view.finalizing || view.demo} onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>
               {view.muted ? t.unmute : t.mute}
             </button>
             <button onClick={() => client.current?.interrupt()} disabled={view.phase !== "speaking"}>
