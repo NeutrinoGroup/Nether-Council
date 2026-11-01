@@ -87,17 +87,22 @@ try {
       }
     });
     try {
+      report.step = "home";
       const now = Date.now();
       const invite = signTicket({ kind: "campaign", campaignId: process.env.NEXT_PUBLIC_CAMPAIGN_ID ?? "halloween-2026", issuedAt: now, expiresAt: now + 900000 }, process.env.CAMPAIGN_SIGNING_SECRET!);
-      await page.goto(`${origin}/?lang=${locale}&invite=${invite}`);
+      await page.goto(`${origin}/?lang=${locale}&invite=${invite}`, { waitUntil: "domcontentloaded" });
+      report.step = "entry";
       await page.getByRole("link", { name: locale === "zh" ? "推门，遇见孟婆" : "Step inside. Meet Meng Po" }).click();
+      report.step = "model";
       await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 30000 }).toBeGreaterThan(29000);
       await page.getByRole("button", { name: locale === "zh" ? "开麦，找孟婆聊聊" : "Turn on mic & meet Meng Po" }).click();
+      report.step = "opening";
       await expect.poll(() => audio, { timeout: 45000 }).toBeGreaterThan(2);
       await expect.poll(() => page.locator(".character-stage").getAttribute("data-mouth-level").then(Number), { timeout: 15000, intervals: [50, 100] }).toBeGreaterThan(0);
       const playbackAtFirstInput = true;
       report.playbackAtFirstInput = playbackAtFirstInput;
       for (let i = 1; i <= 3; i++) {
+        report.step = `turn_${i}`;
         const before = done; const beforeCharacters = characterTurns;
         const pcm = readFileSync(`tests/fixtures/audio/${locale}_turn${i}.pcm`).toString("base64");
         await page.evaluate(async data => { await (window as unknown as { feedFixture: (audio: string) => Promise<void> }).feedFixture(data); }, pcm);
@@ -105,9 +110,11 @@ try {
         await expect.poll(() => done > before && characterTurns > beforeCharacters, { timeout: 45000 }).toBe(true);
       }
       await page.getByRole("button", { name: locale === "zh" ? "收好故事" : "Keep my story" }).click();
+      report.step = "farewell";
       await expect(page.locator(".identity-card-section")).toBeVisible({ timeout: 30000 });
       await expect(page.getByText(locale === "zh" ? "对话已结束" : "Conversation ended", { exact: true })).toBeVisible({ timeout: 55000 });
       const downloadReady = page.waitForEvent("download");
+      report.step = "card";
       await page.getByRole("button", { name: locale === "zh" ? "下载身份卡 PNG" : "Download Card PNG" }).click();
       const download = await downloadReady;
       report.pngDownloaded = download.suggestedFilename().endsWith(".png");
@@ -129,6 +136,7 @@ try {
         report.sceneFps = Number(await page.locator(".character-stage").getAttribute("data-fps"));
       }
       report.status = "passed";
+      report.step = "complete";
     } catch (error) {
       failed = true; report.status = "failed"; report.errorType = error instanceof Error ? error.name : "unknown";
       report.visibleState = await page.locator(".live-state").innerText().catch(() => "unavailable");
