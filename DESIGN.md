@@ -1,235 +1,251 @@
 ---
 name: Nether Council
-description: Warm afterlife encounters in the confident color blocks of a festival wristband.
+description: An intimate Halloween performance on a warm black-box stage.
 colors:
-  ink: "#351a40"
-  ground: "#f4c6ba"
-  paper: "#fff3df"
-  pumpkin: "#ffab5c"
-  muted: "#d9b7d1"
-  line: "#86637f"
+  stage: "#11100f"
+  bone: "#eee7d9"
+  ash: "#bcb0a0"
+  ember: "#f6a15d"
+  seam: "#39342d"
+  encounter: "#171410"
+  field: "#1b1814"
+  encounter-line: "#5b5144"
+  light-action: "#874015"
 typography:
   display-latin:
-    fontFamily: "Bungee, sans-serif"
-    fontSize: "60px"
+    fontFamily: '"Bodoni Moda", Georgia, serif'
+    fontSize: "clamp(54px, 6.5vw, 96px)"
     fontWeight: 400
-    lineHeight: 1.06
-    letterSpacing: "-0.025em"
+    lineHeight: 1.02
+    letterSpacing: "-0.03em"
   display-han:
-    fontFamily: "Ma Shan Zheng, cursive"
-    fontSize: "96px"
+    fontFamily: '"Ma Shan Zheng", cursive'
+    fontSize: "clamp(64px, 7vw, 96px)"
     fontWeight: 400
-    lineHeight: 1.06
-  opening:
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
-    fontSize: "clamp(23px, 2.3vw, 34px)"
-    lineHeight: 1.4
-  caption:
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
-    fontSize: "clamp(19px, 1.7vw, 26px)"
-    lineHeight: 1.65
+    lineHeight: 1.16
+    letterSpacing: "0"
+  cast-name:
+    fontFamily: '"Bodoni Moda", "Ma Shan Zheng", serif'
+    fontSize: "clamp(22px, 2.2vw, 34px)"
+    lineHeight: 1.2
   body:
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
-    fontSize: "15px"
-    lineHeight: 1.6
+    fontSize: "16px"
+    lineHeight: 1.75
   label:
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
-    fontSize: "14px"
-    fontWeight: 650
+    fontSize: "13px"
 rounded:
-  bar: "2px"
-  control: "12px"
-  conversation: "16px"
-  conversation-mobile: "14px"
+  square: "0px"
 spacing:
   compact: "8px"
   small: "12px"
   inset: "16px"
-  control-inline: "20px"
   group: "24px"
-  section: "30px"
-  column: "36px"
+  paragraph: "32px"
 components:
+  entry-link:
+    backgroundColor: "transparent"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
+    padding: "12px 0"
+  entry-link-hover:
+    textColor: "{colors.ember}"
+  language-button:
+    backgroundColor: "transparent"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
+    padding: "10px"
+  language-button-hover:
+    backgroundColor: "{colors.bone}"
+    textColor: "{colors.stage}"
   button-primary:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.control}"
+    backgroundColor: "{colors.bone}"
+    textColor: "{colors.field}"
+    rounded: "{rounded.square}"
     padding: "14px 20px"
   button-primary-hover:
-    backgroundColor: "{colors.pumpkin}"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.ember}"
+    textColor: "{colors.stage}"
   button-secondary:
     backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
     padding: "14px 20px"
   button-secondary-hover:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.bone}"
   button-stop:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.control}"
+    backgroundColor: "{colors.bone}"
+    textColor: "{colors.field}"
+    rounded: "{rounded.square}"
     padding: "14px 20px"
+  button-stop-hover:
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.bone}"
+  navigation:
+    backgroundColor: "{colors.stage}"
+    textColor: "{colors.bone}"
+    height: "112px"
+    padding: "0 4.2vw"
+  nickname-input:
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
+    padding: "10px 12px"
+  character-choice:
+    backgroundColor: "transparent"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
+    padding: "12px 0"
+  character-choice-selected:
+    backgroundColor: "transparent"
+    textColor: "{colors.ember}"
   conversation:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.conversation}"
+    backgroundColor: "{colors.encounter}"
+    textColor: "{colors.bone}"
+    rounded: "{rounded.square}"
     padding: "40px 42px 0"
-  character-stage:
-    height: "300px"
-    width: "100%"
-  character-stage-mobile:
-    height: "240px"
-    width: "100%"
-  notice:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    padding: "16px"
-  audio-band:
-    backgroundColor: "{colors.pumpkin}"
-    height: "68px"
-    padding: "12px 24px"
+  cast-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.bone}"
+    padding: "25px 0"
+  audio-line:
+    backgroundColor: "transparent"
+    height: "36px"
 ---
 
 # Design System: Nether Council
 
 ## Overview
 
-**Creative North Star: "The Festival Wristband"**
+**Creative North Star: "The Midnight Black-Box Theatre"**
 
-Broad aubergine, peach and pumpkin regions give Nether Council a warm party identity. Expressive Chinese and Latin character names carry the personality; conventional controls and readable system body text support a conversation in a dim room. The visual tone is playful and confident, with gentle teasing rather than menace.
+A Chinese spirit welcomes a Halloween guest onto a near-black stage. Warm ivory type, pumpkin footlights and a freestanding character make the encounter intimate and lightly theatrical. The humor stays gentle and the ending warm; spacious display lettering invites a story while quiet instructions keep the conversation usable.
 
-This record describes the implemented web system in `apps/web/src/app/globals.css`, `apps/web/src/features/voice/VoiceTrial.tsx` and `apps/web/src/features/world3d/`. The voice trial pairs the first generated Meng Po character with a readable conversation field. Its particular composition remains a surface pattern; future roster and identity-card screens have not established additional system rules.
+Continuous fields, open cast rows and a deliberately lit object establish the visual world. Native scrolling carries the home narrative; the encounter turns the same materials into a compact operating surface. The warm light finale marks a change in the story without introducing another visual identity.
 
 **Key Characteristics:**
-- Broad, flat color regions with rounded conversation containers.
-- Self-hosted expressive display lettering paired with readable bilingual body text.
-- Plain controls with explicit state text, visible keyboard focus and recovery messages.
-- A real generated character with a poster fallback and an independent playback-driven mouth.
-- A horizontal audio wristband whose movement reflects actual playback.
+- Near-black stage, warm bone lettering and restrained pumpkin signals.
+- Bodoni Moda Latin display paired with Ma Shan Zheng Chinese display.
+- Real Meng Po geometry, existing character posters and an architectural light field.
+- Open lists, fine seams and square interaction surfaces.
+- Scroll-linked staging with small, separate interaction feedback.
+- Readable preparation, captions, microphone controls and recovery messages.
+
+This is a scan of the implemented home and encounter system in `apps/web/src/features/landing/`, `apps/web/src/app/globals.css` and `apps/web/src/features/voice/VoiceTrial.tsx`, following the approved direction in `docs/design/halloween-scroll-brief.md`. The frontmatter describes active theatre tokens and their encounter aliases. Legacy root CSS variables remain in the source; they have not all been migrated. Host received limited ground, shape and stage alignment, retaining its operational layout, Bungee character display and semantic accent colors. Those retained host choices are not a new global palette. This source-backed visual record does not establish real-device, conversation or performance acceptance.
 
 ## Colors
 
-The palette combines warm pale surfaces with aubergine structure and a pumpkin signal accent. Frontmatter values are normative; the source exposes the same names as CSS custom properties. The generated character retains its baked material colors; these are asset content rather than additional interface palette tokens.
+Warm dark neutrals carry the scene; pumpkin identifies the invitation, selection and direct feedback. The frontmatter owns exact color values.
 
 ### Primary
 
-- **Aubergine Ink** (`ink`): body text, navigation divider, primary and stop actions, conversation background, radio accent and waveform bars.
-- **Pumpkin Signal** (`pumpkin`): the audio wristband, live-state text on the dark field, selection highlight and primary-action hover.
+- **Pumpkin Footlight** (`ember`): the last hero line, entry rules and arrows, interactive emphasis, selected encounter character, live state and playback bars.
+- **Burnished Action** (`light-action`): entry hover and keyboard focus within the bone finale, where the normal light-stage accent needs a darker partner.
 
 ### Neutral
 
-- **Peach Ground** (`ground`): page background and the mobile action strip.
-- **Warm Paper** (`paper`): conversation text, primary-action text, notices and secondary-action hover.
-- **Lilac Caption** (`muted`): supporting role descriptions, caption labels and the participant's transcript on aubergine.
-- **Plum Line** (`line`): scrollbars within the dark transcript field; not the general border color.
+- **Midnight Stage** (`stage`): the continuous home ground and encounter shell.
+- **Warm Bone** (`bone`): main lettering on dark ground, the light finale and the filled encounter start action.
+- **Soft Ash** (`ash`): narrative support, labels and secondary captions on dark ground.
+- **Stage Seam** (`seam`): home dividers, cast rows, language control border and encounter navigation divider.
+- **Conversation Shade** (`encounter`): the square encounter field and aligned host stage/caption regions.
+- **Control Shade** (`field`): encounter input fill and secondary-control hover.
+- **Encounter Line** (`encounter-line`): encounter separators and transcript scrollbars.
 
-### Named Rules
+Home exposes `--stage`, `--bone`, `--ash`, `--ember` and `--seam` on its main element. The encounter maps the same material roles to scoped `--ground`, `--ink`, `--muted`, `--pumpkin`, `--paper` and `--line`. In that scope, `--ink` is light and `--paper` is dark; their legacy names must not be interpreted as color roles outside their scope. Existing GLB and poster colors remain asset content.
 
-**The Paired Contrast Rule.** Use paper or lilac text on aubergine; use aubergine text on peach, paper and pumpkin. The live-state pumpkin text belongs on the aubergine conversation field.
+**The Stage Pairing Rule.** Use bone or ash text on the dark stage; use stage text on bone. Keep the light finale's dark focus and hover treatment.
 
 ## Typography
 
-**Display Font:** Bungee for Latin character names; Ma Shan Zheng for Chinese character names. Both are self-hosted through Fontsource imports.
+**Display Font:** self-hosted Bodoni Moda for Latin and Ma Shan Zheng for Chinese. **Body Font:** the system sans-serif stack in the frontmatter, including Chinese system fallbacks.
 
-**Body Font:** the system sans-serif stack in the frontmatter, including PingFang SC and Microsoft YaHei for Chinese.
+The serif's high contrast and the brush face provide two deliberate language voices. Operational text stays familiar and readable. Bodoni's italic file is imported, but the current display does not establish italic as a hierarchy role.
 
-**Character:** the display pairing makes each language feel deliberate. Body text remains familiar and readable, including transcripts, controls and operational feedback.
+- **Display:** the frontmatter records home desktop sizes. The Chinese hero has looser leading than the Latin hero. Story and finale headings adapt the display size rather than introducing a new face.
+- **Cast name:** display type on a single open row, with a quiet system-text role description.
+- **Body:** home paragraphs use the body role and a maximum line length of 65ch; story and finale copy use 1.9 leading. Encounter transcripts retain their larger fluid 19–26px scale and 1.65 leading.
+- **Label:** language choice and small operational text use system typography. Home season text is 12px with 0.08em tracking; tiny stage metadata stays subordinate to the actual invitation.
+- **Responsive display:** at 900px, home Latin display is 52–70px and Chinese is 60–76px. At 600px, the hero uses 44–68px Latin or 64–84px Chinese; story and finale headings use 52px. Encounter Latin display retains its 60px / 44px / 31px desktop/tablet/phone scale with 1.1 leading; Chinese retains 96px / 80px / 64px with 1.06 leading.
 
-### Hierarchy
-
-- **Character display:** the `display-latin` and `display-han` roles share normal weight and tight leading. At the tablet breakpoint they become 44px and 80px; on phones they become 31px and 64px.
-- **Opening:** fluid invitation text, balanced within a maximum width of 26ch; phones use 21px with a 16px top margin.
-- **Caption:** fluid source-language transcript text, a maximum width of 65ch and a scrollable maximum height of 180px. Phones use 20px with 1.6 leading.
-- **Body:** the body token describes participant captions and explanatory copy. Setup introductions use a larger 20px/1.7 treatment, becoming 16px/1.6 on phones.
-- **Label:** field legends use the label token. Caption labels and permission details use 13px; live state uses 14px, becoming 12px on phones. The character role description also becomes 12px on phones. Timing values use tabular numerals.
-
-### Named Rules
-
-**The Two Scripts Rule.** Match the character-name display face to the selected language; keep instructions, transcripts and buttons in the system body stack.
+**The Two Scripts Rule.** Match display type to the selected language; keep instructions, captions and controls in the system body stack. Retained host Bungee display is a scoped operational exception.
 
 ## Layout
 
-The current voice surface uses a centered flex shell with a maximum width of 1600px and a minimum height of 100svh. Default horizontal padding is 40px. A flexible conversation region sits beside a 330px setup column with a 36px gap. The navigation is 82px tall with a single aubergine bottom rule. Conversation padding is asymmetric toward its flush audio band; content has 40px top and 42px horizontal insets.
+Home uses a continuous, full-width stage with fluid horizontal insets (4.2vw). The desktop navigation is 112px tall. A sticky character stage sits to the right of the opening and story text, with a 49% width, 47% left margin, 84vh height and 6vh top offset. The opening and story use viewport-related vertical space; these measurements describe this home composition, not a required layout for future screens.
 
-Inside the conversation, a two-column grid uses `minmax(0, 1.4fr)` and `minmax(110px, 1fr)` with an 18px column gap. The heading, opening and live status occupy the first column; the 300px-tall character stage occupies the second across those three rows. Captions and the audio band span both columns below them.
+The cast pairs a 40% portrait column with open text rows and a 5vw gap. The finale uses two unequal columns and a 12vw gap on the bone field. At 900px, navigation and portrait dimensions reduce and cast role text moves beneath its name. At 600px, home becomes a single flow: invitation, inline 440px character stage, story, cast rows, finale. The auxiliary cast portrait disappears. Mobile narrative insets are 24px, with 22px navigation insets. At 1600px and above, opening/story left padding grows to 8vw and the stage narrows to 43%.
 
-At widths of at least 1500px the shell uses 64px horizontal padding, a 360px setup column and a 48px gap. At 900px and below, shell padding becomes 22px, setup width 260px and gap 22px; navigation becomes 70px tall and conversation insets shrink to 28px by 26px. Actions stack vertically.
+The encounter retains its centered 1600px maximum shell, two-column conversation/setup layout and 40px shell insets. Its 900px adaptation reduces insets and setup width. At 640px, a 100svh shell contains a scrollable middle and a separate normal-flow action footer. Compact character/language/nickname preparation precedes the idle stage; setup hides during an active session. Character choices become a horizontal scrolling text strip. Invitation requirements and runtime errors appear in the action footer alongside the microphone action.
 
-At 640px and below, the shell has a fixed height of 100svh, zero minimum height and 16px horizontal padding; navigation height is 62px. Navigation and the normal-flow action strip do not shrink. The intervening layout has a zero minimum height, vertical scrolling, contained overscroll and a four-pixel bottom inset. It is keyboard-focusable with a three-pixel aubergine outline and four-pixel offset. The action strip sits outside this scrolling region on peach ground, keeping controls reachable without covering content. The start button fills the width; live controls wrap and retain a 90px minimum width.
-
-Before a session, setup precedes the conversation in a vertical flow with a 24px gap; setup is hidden during active voice on phones. The conversation has 26px top and 24px horizontal padding and a minimum height of 430px. Its internal grid uses an eight-pixel gap and a 100px minimum second column; the character stage is 240px tall. Story examples move into a disclosure, and the microphone permission note stays visible in setup. Trial measurements are hidden.
-
-Spacing is grouped by purpose rather than a strict arithmetic scale: compact inline gaps, 12–16px small insets, 24px groups and 30–36px larger separations. Preserve clear separation between setup, transcript and actions when extending this surface.
+The spacing tokens are observed recurring gaps and insets, not an invented arithmetic scale. Host retains its fixed control deck and its existing responsive constraints; this document does not certify that layout as fully redesigned.
 
 ## Elevation & Depth
 
-The interface is flat: no box shadows, gradients, blur or raised panels. The character itself is a lit 3D object within the aubergine field; its material shading does not introduce elevation to interface containers. Broad color changes, a navigation divider, corner shape and whitespace establish hierarchy. Notices are paper patches on peach; the conversation is one large aubergine field. Hover uses a fill change rather than a lift.
+Depth belongs primarily to the lit character and stage architecture. A radial warm field, an arched outline and an elliptical plinth establish the landing's physical setting. The plinth uses `0 22px 35px #0006`; this is a stage-object shadow, not a default surface elevation. Encounter controls and content rely on dark tonal differences and fine rules. The former blanket ban on gradients and shadows no longer describes this world.
 
-### Named Rules
+GSAP ScrollTrigger drives the character's turn and lowering, the halo's contraction and a one-time story entrance on native scroll. Its scroll scrub is 0.6; the story enters over 1.1 seconds with `expo.out`. Framer Motion supplies entry-link hover/tap feedback. CSS sticky provides the anchoring; scrolling itself remains native. Reduced motion removes those decorative transitions and fixes the staged composition; the source requests demand rendering for the reduced-motion scene and pauses rendering offscreen. These are implementation behaviors, not a performance certification.
 
-**The Flat Color Rule.** Build depth with the established color regions and spacing; keep controls and conversation containers free of decorative elevation.
+**The Physical Stage Rule.** Reserve atmospheric gradients and cast shadows for the character's setting; preserve flat, readable operating controls.
 
 ## Shapes
 
-Controls and notices share the control radius; the larger conversation container has its own gentler radius, reduced on phones. The microphone icon uses an inline stroked SVG. The live-state marker is a small outlined circle, filled during an active session. Waveform bars have only a slight rounding. Borders are thin and use the current foreground color; the navigation divider uses aubergine.
+Square corners govern home controls and the encounter's buttons, fields, conversation and disclosures. One-pixel rules divide open rows and regions. The landing's arch and elliptical plinth are intentional architectural silhouettes, not rounded container styles. Encounter character selection is text with a two-pixel selected underline, not a filled card. Host deck controls are square, while retained badges, QR backing and celebration treatments retain their incumbent rounding.
 
 ## Components
 
-### Buttons
+### Entry Links and Buttons
 
-Plain, readable and large enough to operate during a conversation. Standard buttons have a one-pixel border and minimum height of 50px. The start action pairs its label with a 22px microphone SVG, has a 330px desktop minimum width and uses the primary tokens. Its hover changes to pumpkin. Secondary controls are transparent with paper hover. The stop action uses the dark fill, a separate horizontal margin and paper hover; it remains visually distinct from mute and interrupt.
+Home entry links are full-width text actions with a fine pumpkin bottom rule and a thin authored SVG arrow. The baseline minimum height is 62px, becoming 54px on phones; hover changes the lettering to pumpkin. The finale inverts the treatment for its light ground. Framer Motion shifts the opening action 5px horizontally and the final action 3px vertically on hover, with a 0.98 tap scale; reduced motion removes these transforms.
 
-Buttons, links and inputs receive a three-pixel aubergine focus outline with a five-pixel offset. Disabled buttons use 0.55 opacity and a not-allowed cursor. Mobile live controls use 12px padding and 13px text; their group wraps. Do not hide the stop action inside another control.
+The language button is an outlined square control with a bone fill and dark text on hover. Home keyboard focus is a two-pixel pumpkin outline with a seven-pixel offset; the finale uses the darker action color.
 
-### Language Fields
-
-Native radio inputs sit within a labelled fieldset. Each radio is 18px square with an aubergine accent; labels have at least 44px height on larger screens and 40px on phones. Language selection is disabled while the session is active. Keep native semantics and keyboard interaction.
-
-### Conversation Container
-
-One broad aubergine field groups the character heading, generated character stage, opening, live status, character transcript and optional participant transcript. The stage sits alongside the heading and opening, with full-width captions beneath; it does not sit above the entire conversation. Labels use lilac; the source transcript uses paper. Long transcripts wrap and scroll within their own limits. Status always includes words alongside the outlined or filled dot; do not rely on its color alone.
-
-### Character Stage
-
-The actual Meng Po model and its matching poster form one stage, with dimensions recorded in the component tokens. The transparent 3D canvas keeps the aubergine field visible behind the character. The contained poster preserves the character's proportions during loading; a visible message explains a 3D failure while voice remains usable. The stage has a localized accessible character label.
-
-The shipped model is approximately 1.26 MiB with three textures resized to a maximum of 2048px and encoded as WebP. Its matching poster and asset provenance are recorded in `docs/assets/meng-po.source.json`. These facts describe the current asset, not a prescribed budget or production protocol for future characters. It has no bones, morph targets or animation clips; baked eyes remain static. An independently positioned mouth mesh reacts only to actual playback RMS and never stretches the body as a substitute for mouth movement.
-
-Small whole-body transforms provide an idle sway, a listening turn and an interruption response. A celebration transform is supported by the scene but is not invoked by the current voice trial. Reduced motion suppresses decorative body movement and holds the audio bars still; the independent mouth continues to reflect speech. Preserve this distinction between decorative movement and direct speech feedback.
-
-### Notices and Disclosures
-
-Invitation and recovery messages share a paper container and the control radius. Recovery text is semibold; error content has alert semantics. Desktop notices use 16px padding; phones use 12px. Mobile opening-line suggestions and desktop trial measurements use native details/summary controls. Summaries receive the same three-pixel focus outline with a four-pixel offset.
+Encounter buttons retain a 50px minimum height and 14px by 20px padding. Start is bone-filled with dark text, changing to pumpkin on hover. Secondary actions are transparent with a dark hover fill. Stop remains a separately labelled filled action. Disabled buttons have 0.55 opacity and a not-allowed cursor. Encounter focus is a three-pixel pumpkin outline with a five-pixel offset. Phone controls wrap with 13px text and 12px padding.
 
 ### Navigation
 
-A single horizontal row pairs a bold wordmark with a small contextual label. It has no raised background or navigation pills. The wordmark is text in the current implementation, not a fabricated link or logo asset.
+Home navigation pairs a bilingual typographic wordmark with season text and a language control; the season text hides at 900px. The encounter keeps a compact single row with a fine seam divider and a Bodoni/Ma Shan Zheng wordmark. No fabricated logo asset or floating navigation panel is required.
 
-### Audio Wristband
+### Cast Rows and Character Choices
 
-A full-width pumpkin band anchors the conversation field. Thirty-nine aubergine bars share the available width; their vertical scale follows measured playback RMS with individual amplitudes. Zero playback returns them to the same short baseline. The desktop band is 68px tall with a six-pixel gap; phones use 54px and a four-pixel gap. It is decorative and hidden from assistive technology because the adjacent status text provides the state.
+The cast is a linked list with fine rules, a display name, a supporting role and an SVG arrow. Desktop hover or keyboard focus updates the existing portrait; phones retain the linked text rows. Rows are at least 88px tall on desktop and 86px on phones. Seven roles support voice; only Meng Po currently has real 3D geometry.
 
-Reduced motion fixes every bar at the baseline scale of 0.09. The playback sampler also supplies zero level when the preference is active. Preserve this wristband behavior independently of the character mouth, which continues to reflect speech when reduced motion is active. The body may use the subtle state transforms described above; the bars never use fabricated playback.
+Encounter selection uses native radio semantics inside the underlined text strip. A selected item turns pumpkin and gains a two-pixel underline; focus receives an outline around its visible label. Each label retains a 44px minimum height. Language radios remain native, with pumpkin accents, and session-active fields are disabled.
+
+### Fields and Feedback
+
+The optional nickname field uses a square dark fill, bone text and a thin bone border; its type is 16px and its minimum height is 48px, becoming 44px on phones. Invitation and error copy are plain text with rules where appropriate, rather than colored notice cards. The footer version removes extra borders and padding to keep the reason for an unavailable microphone close to the action; runtime errors use pumpkin text and alert semantics.
+
+### Conversation and Playback Line
+
+The square conversation field groups display name, role, real character or existing poster, opening, worded live status and readable captions. Its desktop insets remain 40px by 42px, reducing at the encounter breakpoints. Captions wrap and scroll within bounded areas. The transparent 36px playback line has a fine top rule and square pumpkin bars; their scale follows measured playback rather than fabricated activity. Reduced motion holds the bars at baseline while direct speech-mouth feedback remains available in the voice scene.
+
+### Character Stage and Fallback
+
+Home loads the existing Meng Po GLB on a transparent canvas with warm directional lighting. A matching existing poster remains while loading or after a boundary failure, with a visible localized loading/failure label. The encounter remains accessible when home 3D is unavailable. Other cast images are posters; do not imply additional models exist. The landing turns the whole model as a staged object; voice playback uses the existing independently driven mouth. Do not describe this as a facial rig.
+
+### Exported Identity and Host Exceptions
+
+The identity card remains an exportable story artifact with PNG and QR output; it is not the container grammar for the surrounding interface. Host keeps its dense operating deck, status badges, semantic action colors, larger captions and Bungee display. Its ground, square stage regions and square deck controls align with the new world; retained operational patterns are documented exceptions, not a reason to spread them through the home narrative.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** use the paired contrast assignments for text and its surrounding color field.
-- **Do** match the character-name face to Chinese or Latin while keeping operational copy in the system body stack.
-- **Do** retain native field, disclosure and button semantics with visible keyboard focus.
-- **Do** drive the mouth and wristband from actual playback; reduced motion stops decorative body movement and bars while retaining direct mouth feedback.
-- **Do** keep permission and error recovery copy visible where the participant needs it.
-- **Do** preserve the generated character with its matching poster fallback and keep mobile actions outside the scrollable conversation region.
+- **Do** preserve the stage, bone and pumpkin pairing, including the dark focus treatment on the light finale.
+- **Do** use Bodoni Moda and Ma Shan Zheng for their respective display scripts and system text for operation.
+- **Do** build new narrative regions with continuous fields, open rows and deliberate whitespace.
+- **Do** retain native scrolling, keyboard focus, reduced-motion alternatives and useful poster/error states.
+- **Do** keep microphone permission, unavailable-action reasons and recovery text close to the action.
+- **Do** state seven voice roles and one current real 3D character accurately.
+- **Do** treat host operational typography and accents as limited retained exceptions.
 
 ### Don't:
 
-- **Don't** use lilac caption text as body copy on peach or paper.
-- **Don't** replace descriptive status text with color or waveform movement alone.
-- **Don't** add decorative shadows or glow to the flat color containers.
-- **Don't** treat the voice trial's two-column arrangement as the required composition of every future screen.
-- **Don't** substitute invented character portraits or glowing placeholders for unavailable assets.
-- **Don't** claim a facial rig or animate the whole body as a substitute for the independent mouth.
+- **Don't** reintroduce a card-grid scaffold or icon-feature boxes into the approved home narrative.
+- **Don't** interpret legacy root token names as the active theatre palette or claim all globals were migrated.
+- **Don't** replace unavailable character geometry with invented portraits or imply posters are 3D.
+- **Don't** move display lettering into long captions or operating instructions.
+- **Don't** substitute movement or color alone for worded session state and error recovery.

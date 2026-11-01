@@ -5,6 +5,7 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter, normalizeNickname } from "@net
 import { VoiceClient, idleView, type VoiceView } from "./client";
 import { CharacterStage } from "../world3d/CharacterStage";
 import { BilingualCaption } from "../captions/BilingualCaption";
+import { useVerdict } from "../verdict/useVerdict";
 import { IdentityCard } from "../card/IdentityCard";
 import { InAppBrowserBanner } from "./InAppBrowserBanner";
 import { errorText, words } from "./words";
@@ -33,8 +34,7 @@ export function VoiceTrial({
   const [characterId, setCharacterId] = useState<CharacterId>(initialCharacter);
   const [nickname, setNickname] = useState("");
   const [view, setView] = useState<VoiceView>(idleView);
-  const [generatingVerdict, setGeneratingVerdict] = useState(false);
-  const [verdictError, setVerdictError] = useState<string | null>(null);
+  const { generatingVerdict, verdictError, claimVerdict, resetVerdict } = useVerdict(view, setView, locale);
   const client = useRef<VoiceClient | null>(null);
   const band = useRef<HTMLDivElement>(null);
 
@@ -60,66 +60,11 @@ export function VoiceTrial({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const claimVerdict = useCallback(async () => {
-    if (!view.draft) return;
-    setGeneratingVerdict(true);
-    setVerdictError(null);
-    try {
-      const res = await fetch("/api/verdict", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: view.draft.sessionId, turns: view.draft.turns }),
-      });
-      const data = await res.json();
-      if (res.ok && data.result) {
-        setView(v => ({ ...v, result: data.result }));
-        try { sessionStorage.setItem(`nc_result_${data.result.sessionId}`, JSON.stringify(data.result)); } catch {}
-      } else {
-        setVerdictError(
-          data.error === "NO_STORY"
-            ? (locale === "zh" ? "还没有收到足够的故事细节" : "Not enough story details")
-            : (locale === "zh" ? "身份生成失败，请重试" : "Failed to generate identity, please retry")
-        );
-      }
-    } catch {
-      setVerdictError(locale === "zh" ? "网络异常，请重试" : "Network error, please retry");
-    } finally {
-      setGeneratingVerdict(false);
-    }
-  }, [view.draft, locale]);
-
-  useEffect(() => {
-    let alive = true;
-    if (view.phase === "ended" && view.draft && !view.result && !verdictError) {
-      const timer = setTimeout(() => {
-        if (!alive) return;
-        setGeneratingVerdict(true);
-        void (async () => {
-          try {
-            const res = await fetch("/api/verdict", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sessionId: view.draft!.sessionId, turns: view.draft!.turns }),
-            });
-            const data = await res.json();
-            if (alive && res.ok && data.result) {
-              setView(v => ({ ...v, result: data.result }));
-              try { sessionStorage.setItem(`nc_result_${data.result.sessionId}`, JSON.stringify(data.result)); } catch {}
-            }
-          } catch {
-          } finally {
-            if (alive) setGeneratingVerdict(false);
-          }
-        })();
-      }, 50);
-      return () => { alive = false; clearTimeout(timer); };
-    }
-  }, [view.phase, view.draft, view.result, verdictError]);
-
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
 
   const changeLocale = (next: Locale) => {
     if (next === locale) return;
+    resetVerdict();
     client.current?.stop("language_change");
     client.current = null;
     setView({ ...idleView });
@@ -128,6 +73,7 @@ export function VoiceTrial({
 
   const changeCharacter = (next: CharacterId) => {
     if (next === characterId) return;
+    resetVerdict();
     client.current?.stop("character_change");
     client.current = null;
     setView({ ...idleView });
@@ -136,6 +82,7 @@ export function VoiceTrial({
 
   const start = () => {
     if (!invite) return;
+    resetVerdict();
     client.current?.stop();
     const next = new VoiceClient(setView);
     client.current = next;
@@ -283,16 +230,13 @@ export function VoiceTrial({
                 const item = CHARACTERS[id];
                 const selected = id === characterId;
                 return (
-                  <button
+                  <label
                     key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
                     className={`character-chip ${selected ? "selected" : ""}`}
-                    onClick={() => changeCharacter(id)}
                   >
+                    <input type="radio" name="character" value={id} checked={selected} onChange={() => changeCharacter(id)} />
                     <span className="chip-name">{item.name[locale]}</span>
-                  </button>
+                  </label>
                 );
               })}
             </div>
@@ -341,8 +285,6 @@ export function VoiceTrial({
 
           <p className="talk-hint">{t.hint}</p>
           <p className="permission-note">{t.mic}</p>
-          {invite === "" && <p role="status" className="invite-note">{t.invite}</p>}
-          {view.error && <p role="alert" className="error-note">{errorText(view.error, locale)}</p>}
           {view.connectMs !== undefined && (
             <details className="trial-measurements">
               <summary>{locale === "zh" ? "试听检测" : "Trial measurements"}</summary>
@@ -356,6 +298,10 @@ export function VoiceTrial({
       </div>
 
       <footer className="voice-actions">
+        {(invite === "" || view.error) && <div className="entry-feedback">
+          {invite === "" && <p role="status" className="invite-note">{t.invite}</p>}
+          {view.error && <p role="alert" className="error-note">{errorText(view.error, locale)}</p>}
+        </div>}
         {!active ? (
           <button className="start-button" onClick={start} disabled={!invite || !hydrated}>
             {locale === "zh" ? `开麦，找${charMeta.name.zh}聊聊` : `Turn on mic & meet ${charMeta.name.en}`}
@@ -366,12 +312,13 @@ export function VoiceTrial({
             {view.canClaim && (
               <button
                 className={view.claimReady ? "claim-button ready" : "claim-button"}
+                disabled={view.finalizing}
                 onClick={() => client.current?.finish()}
               >
                 {locale === "zh" ? "收好故事" : "Keep my story"}
               </button>
             )}
-            <button onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>
+            <button disabled={view.finalizing} onClick={() => client.current?.mute(!view.muted)} aria-pressed={view.muted}>
               {view.muted ? t.unmute : t.mute}
             </button>
             <button onClick={() => client.current?.interrupt()} disabled={view.phase !== "speaking"}>

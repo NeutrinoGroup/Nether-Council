@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-const audio = vi.hoisted(() => ({ clear: vi.fn(), stop: vi.fn(), play: vi.fn(), mute: vi.fn(), start: vi.fn(async () => {}), rms: vi.fn(() => 0), isPlaying: vi.fn(() => false) }));
-vi.mock("../../apps/web/src/features/voice/audio/engine", () => ({ AudioEngine: class { start = audio.start; clear = audio.clear; stop = audio.stop; play = audio.play; mute = audio.mute; rms = audio.rms; isPlaying = audio.isPlaying; } }));
+const audio = vi.hoisted(() => ({ clear: vi.fn(), stop: vi.fn(), stopCapture: vi.fn(), play: vi.fn(), mute: vi.fn(), start: vi.fn(async () => {}), rms: vi.fn(() => 0), isPlaying: vi.fn(() => false) }));
+vi.mock("../../apps/web/src/features/voice/audio/engine", () => ({ AudioEngine: class { start = audio.start; clear = audio.clear; stop = audio.stop; stopCapture = audio.stopCapture; play = audio.play; mute = audio.mute; rms = audio.rms; isPlaying = audio.isPlaying; } }));
 import { VoiceClient, type VoiceView } from "../../apps/web/src/features/voice/client";
 import type { Caption } from "@nether/contracts";
 class Socket {
@@ -18,6 +18,7 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); Socket.instances = [];
   const now = Date.now(); session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   vi.stubGlobal("location", { protocol: "https:", host: "example.test" }); vi.stubGlobal("WebSocket", Socket);
+  vi.stubGlobal("sessionStorage", { getItem: vi.fn(() => null), setItem: vi.fn() });
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ session }) })));
 });
 afterEach(() => { current?.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -100,4 +101,41 @@ test("finish cannot fabricate a story and a valid finish releases microphone imm
   const socket = Socket.instances[0];
   socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss scheduled a midnight meeting.", speaker: "user", final: true } }) });
   current.finish(); expect(view).toMatchObject({ phase: "ended", endReason: "claim", draft: { turns: [{ speaker: "user" }] } }); expect(audio.stop).toHaveBeenCalledOnce();
+});
+test("delayed final result keeps the socket open and farewell drains before shutdown", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (event: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }) });
+  send({ type: "session.ready", session });
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss scheduled a midnight meeting.", speaker: "user", final: true } });
+  current.finish(); current.finish();
+  expect(view?.finalizing).toBe(true); expect(audio.stopCapture).toHaveBeenCalledOnce();
+  expect(socket.sent.filter(e => e.type === "session.finalize")).toHaveLength(1);
+  expect(socket.sent.some(e => e.type === "session.end")).toBe(false);
+  await vi.advanceTimersByTimeAsync(1500);
+  const result = { id: crypto.randomUUID(), sessionId: id, characterId: "meng-po", generatedAt: Date.now(), fallback: false, title: { zh: "夜会散场官", en: "Midnight Meeting Adjourner" }, verdict: { zh: "把会议纪要留给南瓜汤。", en: "Leave the meeting notes in the soup." }, warmClosing: { zh: "今晚早点睡。", en: "Rest well tonight." }, tags: [{ zh: "散场", en: "Adjourned" }, { zh: "安睡", en: "Rest" }], sourceTurnIds: ["u1"] };
+  send({ type: "result", result });
+  expect(view?.result?.id).toBe(result.id);
+  send({ type: "response.started", responseId: "farewell" }); audio.isPlaying.mockReturnValue(true);
+  send({ type: "audio.delta", responseId: "farewell", audio: "AAA=" });
+  send({ type: "response.done", responseId: "farewell" }); current.measurePlayback();
+  expect(audio.stop).not.toHaveBeenCalled(); expect(view?.phase).toBe("speaking");
+  audio.isPlaying.mockReturnValue(false); current.measurePlayback();
+  expect(view).toMatchObject({ phase: "ended", endReason: "claim", result: { id: result.id } }); expect(audio.stop).toHaveBeenCalledOnce();
+});
+
+test("finalizing drops late old audio and wrong-session identity, then respects its hard limit", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (event: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }) });
+  send({ type: "session.ready", session });
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss scheduled a midnight meeting.", speaker: "user", final: true } });
+  current.finish();
+  send({ type: "response.started", responseId: "late" });
+  send({ type: "audio.delta", responseId: "late", audio: "AAA=" });
+  send({ type: "result", result: { id: crypto.randomUUID(), sessionId: crypto.randomUUID(), characterId: "meng-po", generatedAt: Date.now(), fallback: false, title: { zh: "夜会散场官", en: "Midnight Meeting Adjourner" }, verdict: { zh: "把会议纪要留给南瓜汤。", en: "Leave the notes in the soup." }, warmClosing: { zh: "晚安。", en: "Good night." }, tags: [{ zh: "散场", en: "Adjourned" }, { zh: "安睡", en: "Rest" }], sourceTurnIds: ["u1"] } });
+  expect(audio.play).not.toHaveBeenCalled(); expect(view?.result).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(54_999); expect(view?.finalizing).toBe(true);
+  await vi.advanceTimersByTimeAsync(1); expect(view).toMatchObject({ phase: "ended", endReason: "claim", draft: { sessionId: id } });
+  expect(audio.stop).toHaveBeenCalledOnce();
 });

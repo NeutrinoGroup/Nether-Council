@@ -8,6 +8,7 @@ import { CHARACTERS, CHARACTER_IDS, getCharacter, normalizeNickname } from "@net
 import { VoiceClient, idleView, type VoiceView } from "../voice/client";
 import { CharacterStage } from "../world3d/CharacterStage";
 import { BilingualCaption } from "../captions/BilingualCaption";
+import { useVerdict } from "../verdict/useVerdict";
 import { IdentityCard } from "../card/IdentityCard";
 import { BgmController } from "./bgm";
 import { playCelebrationChime } from "./celebration";
@@ -48,8 +49,7 @@ export function HostStage({
   const [bgmActive, setBgmActive] = useState<boolean>(false);
   const [bgmDucked, setBgmDucked] = useState<boolean>(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
-  const [generatingVerdict, setGeneratingVerdict] = useState<boolean>(false);
-  const [verdictError, setVerdictError] = useState<string | null>(null);
+  const { generatingVerdict, verdictError, claimVerdict: manualClaimVerdict, resetVerdict } = useVerdict(view, setView, locale);
 
   const client = useRef<VoiceClient | null>(null);
   const bgm = useRef<BgmController | null>(null);
@@ -104,34 +104,6 @@ export function HostStage({
     return () => cancelAnimationFrame(frame);
   }, [view.phase]);
 
-  // Auto-fetch verdict when session wraps up
-  useEffect(() => {
-    let alive = true;
-    if (view.phase === "ended" && view.draft && !view.result && !verdictError) {
-      const timer = setTimeout(() => {
-        if (!alive) return;
-        setGeneratingVerdict(true);
-        void (async () => {
-          try {
-            const res = await fetch("/api/verdict", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sessionId: view.draft!.sessionId, turns: view.draft!.turns }),
-            });
-            const data = await res.json();
-            if (alive && res.ok && data.result) {
-              setView(v => ({ ...v, result: data.result }));
-            }
-          } catch {
-          } finally {
-            if (alive) setGeneratingVerdict(false);
-          }
-        })();
-      }, 50);
-      return () => { alive = false; clearTimeout(timer); };
-    }
-  }, [view.phase, view.draft, view.result, verdictError]);
-
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
 
   const toggleBgm = () => {
@@ -155,16 +127,17 @@ export function HostStage({
   };
 
   const nextGuest = () => {
+    resetVerdict();
     client.current?.stop("next_guest");
     client.current = null;
     setView({ ...idleView });
     setNickname("");
-    setVerdictError(null);
     setGuestCount(c => c + 1);
   };
 
   const changeCharacter = (next: CharacterId) => {
     if (next === characterId) return;
+    resetVerdict();
     client.current?.stop("character_change");
     client.current = null;
     setView({ ...idleView });
@@ -173,6 +146,7 @@ export function HostStage({
 
   const changeLocale = (next: Locale) => {
     if (next === locale) return;
+    resetVerdict();
     client.current?.stop("language_change");
     client.current = null;
     setView({ ...idleView });
@@ -181,6 +155,7 @@ export function HostStage({
 
   const start = () => {
     if (!invite) return;
+    resetVerdict();
     client.current?.stop();
     const next = new VoiceClient(setView);
     client.current = next;
@@ -189,35 +164,12 @@ export function HostStage({
     void next.start(locale, invite, undefined, name, characterId, "host", hostKey);
   };
 
-  const manualClaimVerdict = async () => {
-    if (!view.draft) return;
-    setGeneratingVerdict(true);
-    setVerdictError(null);
-    try {
-      const res = await fetch("/api/verdict", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: view.draft.sessionId, turns: view.draft.turns }),
-      });
-      const data = await res.json();
-      if (res.ok && data.result) {
-        setView(v => ({ ...v, result: data.result }));
-      } else {
-        setVerdictError(data.error === "NO_STORY" ? (locale === "zh" ? "故事内容较少，未成专属评价" : "Not enough story turns") : "生成失败，请重试");
-      }
-    } catch {
-      setVerdictError("网络连接异常");
-    } finally {
-      setGeneratingVerdict(false);
-    }
-  };
 
   return (
     <div className="host-shell" data-celebrating={celebrating} lang={locale === "zh" ? "zh-CN" : "en"}>
       {/* 1. Header: Venue & Host Info */}
       <header className="host-header">
         <div className="host-title-block">
-          <span className="host-tag">NETHER COUNCIL · HOST MODE</span>
           <h1>{locale === "zh" ? "黄泉议会 · 现场主持大屏" : "Nether Council · Live Host Stage"}</h1>
         </div>
         <div className="host-status-badges">
@@ -356,11 +308,11 @@ export function HostStage({
           ) : (
             <>
               {view.canClaim && (
-                <button className="deck-btn accent" onClick={() => client.current?.finish()}>
+                <button className="deck-btn accent" disabled={view.finalizing} onClick={() => client.current?.finish()}>
                   {locale === "zh" ? "收好故事" : "Wrap Up"}
                 </button>
               )}
-              <button className="deck-btn" onClick={() => client.current?.mute(!view.muted)}>
+              <button className="deck-btn" disabled={view.finalizing} onClick={() => client.current?.mute(!view.muted)}>
                 {view.muted ? (locale === "zh" ? "恢复麦克风" : "Unmute") : (locale === "zh" ? "静音麦克风" : "Mute")}
               </button>
               <button className="deck-btn" disabled={view.phase !== "speaking"} onClick={() => client.current?.interrupt()}>
@@ -377,7 +329,7 @@ export function HostStage({
           </button>
 
           <button className="deck-btn celebration" onClick={triggerCelebration}>
-            {locale === "zh" ? "🎉 全场祝词" : "🎉 Toast"}
+            {locale === "zh" ? "全场祝词" : "Toast"}
           </button>
 
           <button className={`deck-btn bgm ${bgmActive ? "active" : ""}`} onClick={toggleBgm}>

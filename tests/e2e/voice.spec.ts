@@ -6,6 +6,9 @@ test("missing invitation keeps paid voice entry closed", async ({ page }, info) 
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeDisabled();
   await expect(page.getByText("You need an event invitation.", { exact: false })).toBeVisible();
+  const reason = await page.locator(".entry-feedback").boundingBox();
+  if (info.project.name === "mobile") expect(reason && reason.y + reason.height <= page.viewportSize()!.height).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.evaluate(() => document.fonts.ready);
   mkdirSync(".impeccable/review", { recursive: true });
   await page.screenshot({ path: `.impeccable/review/${info.project.name}.png`, fullPage: true });
@@ -27,6 +30,7 @@ test("worklet uploads during playback; interruption, mute, isolation and stop wo
     });
   });
   await page.goto("/?invite=test-fixture&lang=en");
+  await page.getByRole("link", { name: "Step inside. Meet Meng Po" }).click();
   await expect(page).toHaveURL(/\/play\?.*invite=test-fixture/);
   await expect.poll(() => page.locator(".character-stage").getAttribute("data-triangles").then(Number), { timeout: 20000 }).toBeGreaterThan(29000);
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
@@ -145,7 +149,10 @@ test("two story turns enable ending; asynchronous bilingual captions preserve li
     await page.locator(".encounter-progress").scrollIntoViewIfNeeded();
     await page.screenshot({ path: ".impeccable/review/mobile-encounter-detail.png", fullPage: true });
   }
-  await claim.click(); await expect(page.getByText("南瓜 Alex，故事已收好。", { exact: true })).toBeVisible();
+  await claim.click();
+  send({ type: "result", result: { id: crypto.randomUUID(), sessionId: id, characterId: "meng-po", generatedAt: now, fallback: false, title: { zh: "会议散场官", en: "Meeting Adjourner" }, verdict: { zh: "把会议纪要交给南瓜汤。", en: "Leave the notes to the soup." }, warmClosing: { zh: "今晚早点睡。", en: "Rest well tonight." }, tags: [{ zh: "散场", en: "Adjourned" }, { zh: "安睡", en: "Rest" }], sourceTurnIds: ["u2"] } });
+  send({ type: "response.started", responseId: "farewell" }); send({ type: "response.done", responseId: "farewell" });
+  await expect(page.getByText("南瓜 Alex，故事已收好。", { exact: true })).toBeVisible();
   await expect(page.getByText("故事仅保留在本页。", { exact: false })).toBeVisible();
   expect(messages.some(e => e.type === "session.end")).toBe(true);
 });

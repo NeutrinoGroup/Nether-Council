@@ -18,3 +18,10 @@ test-results/
 apps/web/public/worklets/capture.js
 .impeccable/questions/
 .impeccable/review/
+
+# Python data worker
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+supabase/.temp/

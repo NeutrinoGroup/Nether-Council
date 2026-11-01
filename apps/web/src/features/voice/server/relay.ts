@@ -30,6 +30,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let bytes = 0, count = 0, readyAt = 0, pendingCancelErrors = 0;
     let readyTimer: ReturnType<typeof setTimeout> | undefined;
     let confirmedTurns: ConfirmedTurn[] = [];
+    let finalizing = false;
+    let farewellRequested = false;
+    const generation = new AbortController();
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
     const canceled = new Set<string>();
     const captions = new Map<string, string>();
@@ -51,11 +55,13 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     function shutdown(code = 1000, reason = "Session ended") {
       if (closed) return;
       closed = true;
+      generation.abort();
       translations.dispose();
       clearTimeout(startTimer);
       clearTimeout(expiryTimer);
       clearTimeout(captureTimer);
       clearTimeout(readyTimer);
+      clearTimeout(finishTimer);
       if (upstream?.readyState === WebSocket.CONNECTING) upstream.terminate();
       else upstream?.close();
       client.close(code, reason);
@@ -69,7 +75,88 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
 
     const startTimer = setTimeout(() => fail("INVALID_MESSAGE"), 5000);
     const expiryTimer = setTimeout(() => shutdown(1000, "Session expired"), Math.max(1, session.expiresAt - Date.now()));
-    const captureTimer = setTimeout(() => { cancel(); shutdown(1000, "Capture limit reached"); }, Math.max(1, session.captureUntil - Date.now()));
+    const captureTimer = setTimeout(() => { if (ready && encounterProgress(confirmedTurns, 0).canClaim) beginFinalize(); else { cancel(); shutdown(1000, "Capture limit reached"); } }, Math.max(1, session.captureUntil - Date.now()));
+
+    function beginFinalize() {
+        if (closed || finalizing) return;
+        cancel();
+        const progress = encounterProgress(confirmedTurns, Date.now() - session.createdAt);
+        if (!progress.canClaim) {
+          send({
+            type: "error",
+            error: {
+              code: "NO_STORY",
+              retryable: false,
+              message: {
+                zh: "还没有收到具体的故事细节，请再讲两句吧。",
+                en: "No story details yet. Please tell me a bit more.",
+              },
+            },
+          });
+          return;
+        }
+
+        finalizing = true;
+        translations.clear();
+        clearTimeout(captureTimer);
+        finishTimer = setTimeout(() => shutdown(1000, "Farewell limit reached"), Math.min(55_000, Math.max(0, session.expiresAt - Date.now())));
+        const textConfig = config.text ?? {
+          key: config.realtimeKey,
+          baseUrl: "https://maas.qianwenaiapi.com/compatible-mode/v1",
+          model: "qwen3.6-flash",
+        };
+
+        void (async () => {
+          try {
+            const result = await generateIdentity(session, confirmedTurns, textConfig, generation.signal);
+            if (closed || generation.signal.aborted) return;
+            send({ type: "result", result });
+            const speech = `${result.title[session.locale]}${session.locale === "zh" ? "。" : ". "}${result.warmClosing[session.locale]}`;
+            const instruction = session.locale === "zh"
+              ? `请温暖真诚地为来宾作最终告别口播，必须包含这句话，不要再提问：“${speech}”`
+              : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`;
+            farewellRequested = true;
+            upstreamSend({
+              type: "conversation.item.create",
+              item: {
+                id: `closing_${result.id}`,
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: instruction }],
+              },
+            });
+            upstreamSend({ type: "response.create" });
+          } catch (err) {
+            if (closed || generation.signal.aborted) return;
+            if (err instanceof Error && err.message === "NO_STORY") {
+              send({
+                type: "error",
+                error: {
+                  code: "NO_STORY",
+                  retryable: false,
+                  message: {
+                    zh: "还没有收到具体的故事细节，请再讲两句吧。",
+                    en: "No story details yet. Please tell me a bit more.",
+                  },
+                },
+              });
+            } else {
+              send({
+                type: "error",
+                error: {
+                  code: "RESULT_FAILED",
+                  retryable: true,
+                  message: {
+                    zh: "身份生成暂时受阻，请稍后重试。",
+                    en: "Identity generation temporarily unavailable. Please retry.",
+                  },
+                },
+              });
+            }
+          }
+        })();
+
+    }
 
     const openUpstream = (resumeTurns: { role: "user" | "assistant"; text: string }[] = []) => {
       readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 25000);
@@ -123,11 +210,18 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           });
           upstreamSend({ type: "response.create" });
         } else if (event.type === "input_audio_buffer.speech_started") {
+          if (finalizing) return;
           currentUserItem = event.item_id;
           translations.clear();
           cancel();
           send({ type: "speech.started" });
         } else if (event.type === "response.created" && event.response) {
+          if (finalizing && !farewellRequested) {
+            canceled.add(event.response.id);
+            pendingCancelErrors++;
+            upstreamSend({ type: "response.cancel" });
+            return;
+          }
           activeResponse = event.response.id;
           translations.invalidate("character");
           send({ type: "response.started", responseId: event.response.id });
@@ -201,80 +295,10 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         return cancel();
       }
 
-      if (event.type === "session.finalize") {
-        cancel();
-        const progress = encounterProgress(confirmedTurns, Date.now() - session.createdAt);
-        if (!progress.canClaim) {
-          send({
-            type: "error",
-            error: {
-              code: "NO_STORY",
-              retryable: false,
-              message: {
-                zh: "还没有收到具体的故事细节，请再讲两句吧。",
-                en: "No story details yet. Please tell me a bit more.",
-              },
-            },
-          });
-          return;
-        }
-
-        const textConfig = config.text ?? {
-          key: config.realtimeKey,
-          baseUrl: "https://maas.qianwenaiapi.com/compatible-mode/v1",
-          model: "qwen3.6-flash",
-        };
-
-        void (async () => {
-          try {
-            const result = await generateIdentity(session, confirmedTurns, textConfig);
-            send({ type: "result", result });
-            const speech = session.locale === "zh" ? result.warmClosing.zh : result.warmClosing.en;
-            const instruction = session.locale === "zh"
-              ? `请温暖真诚地为来宾作最终告别口播，必须包含这句话，不要再提问：“${speech}”`
-              : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`;
-            upstreamSend({
-              type: "conversation.item.create",
-              item: {
-                id: `closing_${result.id}`,
-                type: "message",
-                role: "user",
-                content: [{ type: "input_text", text: instruction }],
-              },
-            });
-            upstreamSend({ type: "response.create" });
-          } catch (err) {
-            if (err instanceof Error && err.message === "NO_STORY") {
-              send({
-                type: "error",
-                error: {
-                  code: "NO_STORY",
-                  retryable: false,
-                  message: {
-                    zh: "还没有收到具体的故事细节，请再讲两句吧。",
-                    en: "No story details yet. Please tell me a bit more.",
-                  },
-                },
-              });
-            } else {
-              send({
-                type: "error",
-                error: {
-                  code: "RESULT_FAILED",
-                  retryable: true,
-                  message: {
-                    zh: "身份生成暂时受阻，请稍后重试。",
-                    en: "Identity generation temporarily unavailable. Please retry.",
-                  },
-                },
-              });
-            }
-          }
-        })();
-        return;
-      }
+      if (event.type === "session.finalize") { beginFinalize(); return; }
 
       if (event.type === "audio.append") {
+        if (finalizing) return;
         if (Date.now() >= session.captureUntil) return shutdown();
         const pcm = Buffer.from(event.audio, "base64");
         bytes += pcm.length;

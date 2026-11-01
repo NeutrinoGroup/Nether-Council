@@ -11,7 +11,7 @@ test("host screen loads with guest badges, character dock and celebration", asyn
   // 2. Control deck checks
   await expect(page.getByRole("button", { name: "开启本轮麦克风" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "下一位来宾 ➜" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "🎉 全场祝词" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "全场祝词" })).toBeEnabled();
 
   // 3. Switch characters
   await page.getByRole("button", { name: "黑无常" }).click();
@@ -27,7 +27,7 @@ test("host screen loads with guest badges, character dock and celebration", asyn
   await expect(page.getByText("Guest #2")).toBeVisible();
 
   // 6. Trigger celebration
-  const toastBtn = page.getByRole("button", { name: "🎉 Toast" });
+  const toastBtn = page.getByRole("button", { name: "Toast", exact: true });
   await toastBtn.scrollIntoViewIfNeeded();
   await toastBtn.click();
   await expect(page.locator(".host-celebration-banner")).toBeVisible();
