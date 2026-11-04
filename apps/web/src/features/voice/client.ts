@@ -54,7 +54,12 @@ export class VoiceClient {
   private armFallback(reset = true) {
     if (!reset && this.responseTimer !== undefined) return;
     clearTimeout(this.responseTimer);
-    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) this.responseTimer = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), 3000);
+    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) this.responseTimer = setTimeout(() => {
+      // Buffered audio can outlast the last network packet. Keep live cancellation
+      // available until playback drains; heartbeats still detect a lost socket.
+      if (this.audio.isPlaying()) this.armFallback();
+      else this.enterDemo("NETWORK_TIMEOUT");
+    }, 3000);
   }
   private armPermissionFallback() {
     clearTimeout(this.responseTimer);
