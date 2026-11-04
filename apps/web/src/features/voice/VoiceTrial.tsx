@@ -12,7 +12,6 @@ import { BilingualCaption } from "../captions/BilingualCaption";
 import { useVerdict } from "../verdict/useVerdict";
 import { IdentityCard } from "../card/IdentityCard";
 import { InAppBrowserBanner } from "./InAppBrowserBanner";
-import { UserNavBadge } from "../auth/UserNavBadge";
 import { errorText, words } from "./words";
 
 let clientHydrated = false;
@@ -139,7 +138,6 @@ export function VoiceTrial({
       <header className="party-nav">
         <span className="brand">{t.home}</span>
         <div className="nav-encounter" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <UserNavBadge locale={locale} />
           <span>{locale === "zh" ? "今晚的奇遇" : "Tonight’s encounter"}</span>
           {active && (
             <button
