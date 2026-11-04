@@ -20,7 +20,7 @@ alter table public.users enable row level security;
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant usage on schema public to service_role;
-    grant select, insert, update, delete on all tables in schema public to service_role;
+    grant select, insert, update, delete on public.users to service_role;
   end if;
   if exists (select 1 from pg_roles where rolname = 'anon') then
     grant usage on schema public to anon;

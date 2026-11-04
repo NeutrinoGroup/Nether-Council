@@ -1,133 +1,47 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { syncUserToDatabase } from "@/lib/userDb";
-import { DEFAULT_GOOGLE_CLIENT_ID, type GoogleProfile } from "@/lib/googleAuth";
-
+import { AUTH_COOKIE, FLOW_COOKIE, demoEnabled, identityToken, readGoogleFlow, writeCookie } from "@/lib/authSession";
+import { sameOrigin } from "@/shared/server/tickets";
+import type { GoogleProfile } from "@/lib/googleAuth";
+const Input = z.object({ code: z.string().min(1).max(4096).optional(), state: z.string().min(1).max(128).optional(), id_token: z.literal("demo_verified_google_identity").optional() });
+const GoogleUser = z.object({ sub: z.string().min(1).max(100), email: z.email(), email_verified: z.literal(true), name: z.string().max(128).optional(), picture: z.url().max(512).optional() });
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+  let response: NextResponse;
   try {
-    const body = await request.json().catch(() => ({}));
-    const { code, id_token, redirect_uri } = body;
-
-    if (!code && !id_token) {
-      return NextResponse.json(
-        { error: "Missing authorization code or id_token" },
-        { status: 400 }
-      );
+    const raw = await request.text();
+    if (raw.length > 10000) return NextResponse.json({ error: "Invalid message" }, { status: 413 });
+    let value: unknown;
+    try { value = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid message" }, { status: 400 }); }
+    const parsed = Input.safeParse(value);
+    if (!parsed.success || (!parsed.data.code && !parsed.data.id_token)) return NextResponse.json({ error: "Missing authorization code or id_token" }, { status: 400 });
+    const body = parsed.data;
+    const synthetic = Boolean(body.id_token);
+    let googleUser: z.infer<typeof GoogleUser>;
+    if (synthetic) {
+      if (!demoEnabled()) return NextResponse.json({ error: "Demo login disabled" }, { status: 403 });
+      googleUser = { sub: "demo_spirit_alexander", email: "alexander.spirit@nether.council", email_verified: true, name: "Alexander (孟婆座下客)" };
+    } else {
+      const flow = readGoogleFlow(request);
+      if (!flow || body.state !== flow.state || flow.redirectUri !== new URL(request.url).origin) return NextResponse.json({ error: "Invalid or expired login state" }, { status: 400 });
+      const clientId = process.env.GOOGLE_CLIENT_ID; const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      if (!clientId || !clientSecret) return NextResponse.json({ error: "Google login is not configured" }, { status: 503 });
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code: body.code!, client_id: clientId, client_secret: clientSecret, redirect_uri: flow.redirectUri, code_verifier: flow.verifier, grant_type: "authorization_code" }), signal: AbortSignal.timeout(10000), cache: "no-store" });
+      const token = await tokenRes.json();
+      if (!tokenRes.ok || typeof token.access_token !== "string") return NextResponse.json({ error: "Google authorization failed" }, { status: 401 });
+      const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${token.access_token}` }, signal: AbortSignal.timeout(10000), cache: "no-store" });
+      const user = GoogleUser.safeParse(await userRes.json());
+      if (!userRes.ok || !user.success) return NextResponse.json({ error: "Google identity not verified" }, { status: 401 });
+      googleUser = user.data;
     }
-
-    // 1. Sandbox / Demo instant verification support
-    if (id_token === "demo_verified_google_identity") {
-      const demoId = "did:nether:google:demo_spirit_alexander";
-      const dbUser = await syncUserToDatabase({
-        id: demoId,
-        email: "alexander.spirit@nether.council",
-        name: "Alexander (孟婆座下客)",
-        picture: "https://lh3.googleusercontent.com/a/default-user=s96-c",
-        bio: "万圣夜迷路人，在黄泉议会认领了南瓜忘忧汤。",
-      });
-
-      const profile: GoogleProfile = {
-        id: dbUser.id,
-        googleId: "demo_spirit_alexander",
-        email: dbUser.email,
-        emailVerified: true,
-        name: dbUser.name,
-        picture: dbUser.picture,
-        bio: dbUser.bio,
-        referralCode: dbUser.referral_code || "nc_spirit_8888",
-        synthetic: true,
-      };
-
-      return NextResponse.json({ success: true, profile });
-    }
-
-    const clientId =
-      process.env.GOOGLE_CLIENT_ID ||
-      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-      DEFAULT_GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
-
-    if (!clientSecret) {
-      // In development or when GOOGLE_CLIENT_SECRET is missing, provide a friendly explanation or fallback
-      return NextResponse.json(
-        {
-          error: "GOOGLE_CLIENT_SECRET is not configured on this server. For local testing, please use demo login.",
-          needsConfig: true,
-        },
-        { status: 400 }
-      );
-    }
-
-    // 2. Live Google OAuth 2.0 token exchange
-    const tokenUrl = "https://oauth2.googleapis.com/token";
-    const redirectUrl = redirect_uri || "http://localhost:3100";
-
-    const tokenParams = new URLSearchParams({
-      code,
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUrl,
-      grant_type: "authorization_code",
-    });
-
-    const tokenRes = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: tokenParams.toString(),
-    });
-
-    const tokenData = await tokenRes.json();
-    if (!tokenRes.ok || tokenData.error) {
-      return NextResponse.json(
-        {
-          error:
-            tokenData.error_description ||
-            tokenData.error ||
-            "Failed to exchange Google OAuth code",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 3. Fetch Google user profile
-    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
-    });
-
-    if (!userInfoRes.ok) {
-      return NextResponse.json(
-        { error: "Failed to fetch Google user profile" },
-        { status: 400 }
-      );
-    }
-
-    const googleUser = await userInfoRes.json();
     const userId = `did:nether:google:${googleUser.sub}`;
-
-    const dbUser = await syncUserToDatabase({
-      id: userId,
-      email: googleUser.email,
-      name: googleUser.name || googleUser.email.split("@")[0],
-      picture: googleUser.picture || null,
-      bio: "Nether Council Halloween Visitor",
-    });
-
-    const profile: GoogleProfile = {
-      id: dbUser.id,
-      googleId: googleUser.sub,
-      email: dbUser.email,
-      emailVerified: Boolean(googleUser.email_verified),
-      name: dbUser.name,
-      picture: dbUser.picture,
-      bio: dbUser.bio,
-      referralCode: dbUser.referral_code || "nc_guest",
-      synthetic: false,
-    };
-
-    return NextResponse.json({ success: true, profile });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+    const ticket = identityToken(userId, synthetic);
+    const user = await syncUserToDatabase({ id: userId, email: googleUser.email, name: googleUser.name || googleUser.email.split("@")[0], picture: googleUser.picture || null, bio: "Nether Council Visitor" });
+    const profile: GoogleProfile = { id: user.id, googleId: googleUser.sub, email: user.email, emailVerified: !synthetic, name: user.name, picture: user.picture, bio: user.bio, referralCode: user.referral_code!, synthetic };
+    response = NextResponse.json({ success: true, profile }, { headers: { "Cache-Control": "no-store" } });
+    writeCookie(response, AUTH_COOKIE, ticket, 3600, request);
+  } catch { response = NextResponse.json({ error: "Identity service unavailable" }, { status: 503 }); }
+  writeCookie(response, FLOW_COOKIE, "", 0, request);
+  return response;
 }
