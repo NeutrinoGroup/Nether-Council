@@ -48,7 +48,7 @@ store.dispatch(handler)
 
 ## 上线接线点
 
-本轮交付 **可执行迁移、Python 内部库和真实 PostgreSQL 测试**，不是宣称已上线的持久化服务。当前网页 `/api/events` 仍使用既有服务端遥测日志。接线时让该受保护入口调用部署后的 Python 私有 ingestion；没有浏览器直连数据库。音频不可等待该请求，数据失败只影响观测。
+本轮交付可执行迁移、Python 内部库、HMAC 私有 ingestion endpoint 和真实 PostgreSQL 测试；生产部署仍需配置专用 Supabase DSN、私有服务身份和 URL。网页 `/api/events` 在配置 `NETHER_DATA_INGEST_URL` 与 `NETHER_DATA_INGEST_SECRET` 后转发已验签白名单事件，否则继续使用既有服务端遥测日志。没有浏览器直连数据库。音频不可等待该请求，数据失败只影响观测。
 
 上线前需确认 Nether 专用 Supabase 项目及 Python 服务部署位置，再配置服务身份、迁移、私有请求认证、限时及健康检查。当前连接器只发现非 Nether 命名的共享项目，因此本轮未修改线上数据库或新建计费项目。已有 Vercel 平台环境变量保持使用，不覆盖本机 `.env`。
 

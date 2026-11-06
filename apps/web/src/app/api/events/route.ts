@@ -1,6 +1,7 @@
 import { TelemetryEvent } from "@nether/contracts";
 import { serverConfig } from "@/shared/server/config";
 import { cookieToken, readSession, sameOrigin } from "@/shared/server/tickets";
+import { forwardTelemetryEvent } from "@/shared/server/data-ingest";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return new Response(null, { status: 403 });
@@ -12,5 +13,6 @@ export async function POST(request: Request) {
   if (event.name !== "entry_viewed" && (!claims || event.sessionId !== claims.session.id)) return new Response(null, { status: 403 });
   const verified = { ...event, at: Date.now(), sessionId: claims?.session.id, characterId: claims?.session.characterId, locale: claims?.session.locale, sourceSessionId: claims?.sourceSessionId };
   console.log(JSON.stringify({ channel: "nether.telemetry", version: 1, ...verified }));
+  await forwardTelemetryEvent(verified);
   return new Response(null, { status: 202, headers: { "Cache-Control": "no-store" } });
 }
