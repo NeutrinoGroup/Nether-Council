@@ -148,8 +148,8 @@ body{background:#11100f}
 .soul-soup[data-mood="laughing"] { --soul-fire: #ffd46a; }
 .soul-soup[data-mood="mystical"] { --soul-fire: #a6ead8; }
 .soup-flavour { position: absolute; bottom: 5px; width: 100%; text-align: center; font-size: 11px; letter-spacing: .05em; color: var(--soul-fire); }
-.soul-worries { position: absolute; inset: 12% 4% 30%; display: flex; align-items: center; justify-content: space-around; gap: 6px; }
-.soul-worry { max-width: 32%; overflow-wrap: anywhere; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--soul-fire) 40%, transparent); border-radius: 18px; background: #17111dda; color: var(--soul-fire); font-size: clamp(12px, 1.2vw, 17px); text-shadow: 0 0 12px var(--soul-fire); animation: soul-float 3s ease-in-out infinite alternate; animation-delay: calc(var(--ghost-index) * -.8s); }
+.soul-worries { position: absolute; inset: 4% 4% 30%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-around; gap: 6px; }
+.soul-worry { max-width: 90%; overflow-wrap: anywhere; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--soul-fire) 40%, transparent); border-radius: 18px; background: #17111dda; color: var(--soul-fire); font-size: clamp(12px, 1.2vw, 17px); text-shadow: 0 0 12px var(--soul-fire); animation: soul-float 3s ease-in-out infinite alternate; animation-delay: calc(var(--ghost-index) * -.8s); }
 .soul-soup[data-ritual="true"] .soul-worry { animation: soul-to-ash 2.8s ease-in forwards; animation-delay: calc(var(--ghost-index) * .15s); }
 .soup-blessing { position: absolute; bottom: 30px; left: 5%; right: 5%; text-align: center; }
 .soup-fortune { padding: 12px 16px; background: #17111df2; border: 1px solid var(--soul-fire); border-radius: 4px; animation: soup-fortune-in .7s ease-out both; }
@@ -166,5 +166,10 @@ body{background:#11100f}
 .voice-text-fallback button { padding-inline: 16px; border: 1px solid #84766f; border-radius: 6px; }
 .demo-status { font-size: 12px; opacity: .7; }
 .ritual-worry, .ritual-blessing { text-align: center; color: #f5cf91; }
+.immersive-soul-altar { position: relative; min-height: 210px; }
+.immersive-soul-altar .soul-soup { box-shadow: none; }
+.immersive-soul-altar + .soup-description { margin-top: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.immersive-soul-altar .soup-blessing { bottom: 32px; }
 .character-stage[data-mood="storm"] { background: radial-gradient(ellipse, #43306955, transparent 70%); }
 .character-stage[data-mood="warm"] { background: radial-gradient(ellipse, #b77b3455, transparent 70%); }

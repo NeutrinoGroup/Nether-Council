@@ -53,12 +53,17 @@ class ToolDispatcher:
 
     def __init__(self, auto_continue: bool = True):
         self.auto_continue = auto_continue
+        self.soul_mode = False
         self.active: str | None = None
         self.calls: set[str] = set()
         self.canceled: set[str] = set()
         self.continue_after: set[str] = set()
 
     def observe_client(self, event: dict):
+        if event.get("type") == "session.update" and "tools" in event.get("session", {}):
+            # Meng Po uses a stricter state machine at the existing Next edge.
+            # Forward all its calls unchanged, including the shared change_mood name.
+            self.soul_mode = any(tool.get("function", {}).get("name") == "trigger_soul_soup_ritual" for tool in event["session"]["tools"])
         if event.get("type") == "response.cancel" and self.active:
             self.canceled.add(self.active)
             self.continue_after.discard(self.active)
@@ -66,6 +71,8 @@ class ToolDispatcher:
 
     def observe_provider(self, event: dict) -> tuple[list[dict], list[dict], bool]:
         """Returns downstream events, upstream acknowledgements, and consumption flag."""
+        if self.soul_mode:
+            return [], [], False
         kind = event.get("type")
         if kind == "response.created":
             self.active = event.get("response", {}).get("id")

@@ -2,12 +2,14 @@
   "characterId": "meng-po",
   "provider": "Tencent Hunyuan 3D legacy OpenAI-compatible API",
   "endpoint": "https://api.ai3d.cloud.tencent.com",
-  "generatedAt": "2026-10-31T19:17:16.643Z",
+  "generatedAt": "2026-11-01T16:56:45.605Z",
   "generation": {
     "Model": "3.1",
     "FaceCount": 30000,
     "EnablePBR": true,
-    "Prompt": "一位亲切机灵的中国神话孟婆，南瓜忘忧汤酒保，风格化高质量游戏角色，完整单人全身，正面站立，宽松深紫中式长袍，橙色围裙，银白盘发，慈祥又俏皮的脸，清晰五官与自然闭合嘴唇，手捧橙色南瓜汤碗，造型简洁，干净材质，手臂稍微离开躯干，适合手机浏览器展示。无文字，无底座，无背景，无额外人物，无恐怖血腥元素。"
+    "Method": "ImageTo3D",
+    "JobId": "1508513167608659968",
+    "Prompt": "根据概念原画设计图生成的全新孟婆3D模型：银发盘髻发簪、优雅深紫轻纱长袍、手捧忘忧孟婆汤碗、彼岸花暗纹、适合手机与桌面Three.js展示。"
   },
   "creditsConsumed": 40,
   "usageBasis": {
@@ -16,8 +18,8 @@
     "note": "Provider service terms apply; no claim of public-domain or CC licensing."
   },
   "original": {
-    "bytes": 29557484,
-    "sha256": "357f49c1d1d78c7da8b1d75f5ead293fe1888d25229f8cf448ebddca035fcbc9"
+    "bytes": 25177672,
+    "sha256": "277eb2801078dc873d35092006613612286d187aef7eb39610578f80a8e831d5"
   },
   "processing": {
     "tool": "@gltf-transform/cli@4.5.1",
@@ -30,8 +32,8 @@
     "textureFormat": "WebP"
   },
   "structure": {
-    "triangles": 29992,
-    "vertices": 20564,
+    "triangles": 30088,
+    "vertices": 24042,
     "meshes": 1,
     "textures": 3,
     "bones": 0,
@@ -52,12 +54,12 @@
   },
   "files": {
     "apps/web/public/models/meng-po.glb": {
-      "bytes": 1319240,
-      "sha256": "53459741ea2002df82aa8041b5abda1bec63da4a7c6905f332a7b81fc256eebe"
+      "bytes": 1384960,
+      "sha256": "b159a51ae447c6e258a39d053f5ea5920f46ccb9687593fedb0b6c7b7b92d3f5"
     },
     "apps/web/public/posters/meng-po.png": {
-      "bytes": 90381,
-      "sha256": "1b2828ab7bce0a6aec7c01c8618817f1b17ac068ea2c293e33f3076c4a16d623"
+      "bytes": 99751,
+      "sha256": "ffc33d1cc4dfb84edd6fbac0cb2451f92e54076cddb552d11713a7cf5ddd0de4"
     }
   }
 }

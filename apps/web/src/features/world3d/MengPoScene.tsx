@@ -50,7 +50,7 @@ function Model({ phase, interruptedAt, celebrating: hostCelebrating, scene: scen
   return <group ref={body}><group scale={placement.scale} position={placement.position}>
     <primitive object={scene} dispose={null} />
     {/* Source GLB is a single baked mesh without a face rig. This independent mouth never stretches the body. */}
-    <mesh ref={mouth} position={[-0.002, 0.895, 0.080]} visible={false}><sphereGeometry args={[1, 16, 10]} /><meshBasicMaterial color="#511a2b" /></mesh>
+    <mesh ref={mouth} position={[0.0, 0.852, 0.078]} visible={false}><sphereGeometry args={[1, 16, 10]} /><meshBasicMaterial color="#511a2b" /></mesh>
   </group></group>;
 }
 export default function MengPoScene(props: Props) {

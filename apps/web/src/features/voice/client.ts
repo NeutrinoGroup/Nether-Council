@@ -16,6 +16,7 @@ export class VoiceClient {
   private activeResponse?: string;
   private canceled = new Set<string>();
   private soulCalls = new Set<string>();
+  private completedSoulResponses = new Set<string>();
   private abort = new AbortController();
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private deadlineTimer?: ReturnType<typeof setTimeout>;
@@ -40,7 +41,7 @@ export class VoiceClient {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private heartbeatDeadline?: ReturnType<typeof setTimeout>;
   private appliedCalls = new Set<string>();
-  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number } = {}) {}
+  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number } = {}) {}
   private applyScene(payload: UiAction) {
     const soup = this.view.soup ?? { mood: "healing" as const, worries: [] };
     if (payload.action === "change_mood") {
@@ -54,7 +55,16 @@ export class VoiceClient {
   private armFallback(reset = true) {
     if (!reset && this.responseTimer !== undefined) return;
     clearTimeout(this.responseTimer);
-    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) this.responseTimer = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), 3000);
+    const timeout = this.options.networkTimeoutMs ?? 3000;
+    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) {
+      this.responseTimer = setTimeout(() => {
+        if (this.audio.isPlaying()) {
+          this.armFallback();
+          return;
+        }
+        this.enterDemo("NETWORK_TIMEOUT");
+      }, timeout);
+    }
   }
   private armPermissionFallback() {
     clearTimeout(this.responseTimer);
@@ -262,8 +272,9 @@ export class VoiceClient {
         clearTimeout(this.connectionTimer); clearTimeout(this.responseTimer); this.ready = true;
         if (this.options.demoFallback) {
           clearInterval(this.heartbeatTimer);
+          const pingTimeout = this.options.networkTimeoutMs ?? 3000;
           this.heartbeatTimer = setInterval(() => {
-            if (!this.heartbeatDeadline) this.heartbeatDeadline = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), 3000);
+            if (!this.heartbeatDeadline) this.heartbeatDeadline = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), pingTimeout);
             this.send({ type: "ping" });
           }, 1000);
         }
@@ -294,7 +305,7 @@ export class VoiceClient {
         try { this.audio.play(event.audio); } catch { return this.fail("PLAYBACK_FAILED"); }
         this.update({ phase: "speaking", ...(this.view.firstAudioMs === undefined ? { firstAudioMs: Math.round(performance.now() - this.startedAt) } : {}) });
       } else if (event.type === "soul.action") {
-        if (session.characterId !== "meng-po" || this.canceled.has(event.responseId) || this.soulCalls.has(event.callId) || event.responseId !== this.activeResponse) return;
+        if (session.characterId !== "meng-po" || this.canceled.has(event.responseId) || this.soulCalls.has(event.callId) || this.completedSoulResponses.has(event.responseId) || event.responseId !== this.activeResponse) return;
         this.soulCalls.add(event.callId);
         const soup = this.view.soup ?? { mood: "healing" as const, worries: [] };
         const action = event.action;
@@ -322,6 +333,7 @@ export class VoiceClient {
         try { sessionStorage.setItem(`nc_result_${event.result.sessionId}`, JSON.stringify(event.result)); } catch {}
         this.update({ result: event.result });
       } else if (event.type === "response.done") {
+        this.completedSoulResponses.add(event.responseId);
         if (!this.canceled.has(event.responseId)) clearTimeout(this.responseTimer);
         if (this.view.finalizing && this.result && event.responseId === this.closingResponse) { this.closingDone = true; this.finishWhenDrained(); }
       } else if (event.type === "error") {
