@@ -9,7 +9,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-EVENTS = frozenset({"conversation_started", "conversation_completed", "card_rendered", "card_download_created", "share_invoked", "invite_copied", "referred_conversation_started", "connection_error", "latency"})
+EVENTS = frozenset({"conversation_started", "conversation_completed", "card_rendered", "card_download_clicked", "card_download_created", "share_invoked", "invite_copied", "referred_conversation_started", "connection_error", "latency"})
 METRICS = frozenset({"connect_ms", "first_audio_ms", "stop_ms", "translation_ms", "result_ms"})
 
 
@@ -68,6 +68,7 @@ class Store:
                 "referred_conversation_started": "started_at=coalesce(started_at,now()), status=case when status='created' then 'active' else status end",
                 "conversation_completed": "completed_at=coalesce(completed_at,now()), status='completed'",
                 "card_rendered": "card_rendered_at=coalesce(card_rendered_at,now())",
+                "card_download_clicked": "updated_at=now()",
                 "card_download_created": "card_saved_at=coalesce(card_saved_at,now()), card_save_count=card_save_count+1",
                 "share_invoked": "share_invoked_at=coalesce(share_invoked_at,now()), share_count=share_count+1",
                 "invite_copied": "invite_copied_at=coalesce(invite_copied_at,now())",
