@@ -51,7 +51,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   const now = Date.now();
-  const session: Session = { id: crypto.randomUUID(), characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  // Exercise gateway-owned scene tools with a regular host. Meng Po's soul-soup
+  // tools are owned by the edge and use a separate protocol, not UI_ACTION.
+  const session: Session = { id: crypto.randomUUID(), characterId: "hei-wuchang", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   edge.on("connection", socket => { void relayVoice(socket, session, { gatewayUrl: `ws://127.0.0.1:${port}/realtime`, gatewaySecret: secret, realtimeKey: "unused-at-edge", realtimeUrl: providerUrl, realtimeModel: "fixture" }).then(() => { relayClosed = true; }); });
   client = new WebSocket(edgeUrl); const received: ServerMessage[] = [];
   client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(String(raw)))));
