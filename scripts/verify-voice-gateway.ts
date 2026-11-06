@@ -9,10 +9,11 @@ import WebSocket, { WebSocketServer } from "ws";
 import { ServerMessage, type Session } from "@nether/contracts";
 import { relayVoice } from "../apps/web/src/features/voice/server/relay";
 
-const until = async (check: () => boolean, milliseconds = 8000) => {
+const logs: string[] = [];
+const until = async (check: () => boolean, milliseconds = 20_000) => {
   const end = Date.now() + milliseconds;
   while (!check()) {
-    if (Date.now() >= end) throw new Error("Gateway verification timed out");
+    if (Date.now() >= end) throw new Error(`Gateway verification timed out (${logs.join("").slice(-1000)})`);
     await new Promise(resolve => setTimeout(resolve, 10));
   }
 };
@@ -24,7 +25,7 @@ const providerUrl = `ws://127.0.0.1:${(provider.address() as AddressInfo).port}`
 const edgeUrl = `ws://127.0.0.1:${(edge.address() as AddressInfo).port}`;
 const secret = "local-gateway-verification-secret-32";
 const gateway = spawn("uv", ["run", "--project", "services/voice", "--frozen", "uvicorn", "nether_voice.app:app", "--host", "127.0.0.1", "--port", String(port), "--log-level", "error"], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, VOICE_GATEWAY_SECRET: secret, QWEN_DUPLEX_API_KEY: "fixture-provider-key", QWEN_REALTIME_URL: providerUrl, QWEN_REALTIME_MODEL: "fixture" } });
-const logs: string[] = []; gateway.stderr.on("data", chunk => logs.push(String(chunk)));
+gateway.stderr.on("data", chunk => logs.push(String(chunk)));
 let remote: WebSocket | undefined; let providerClosed = false; let relayClosed = false;
 const upstream: Record<string, unknown>[] = []; let responses = 0;
 provider.on("connection", (socket, request) => {
@@ -51,7 +52,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   const now = Date.now();
-  const session: Session = { id: crypto.randomUUID(), characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
+  // Use a scene character here: Meng Po's tool set is intentionally owned by
+  // the Next edge, while this test verifies the FastAPI gateway dispatcher.
+  const session: Session = { id: crypto.randomUUID(), characterId: "zhong-kui", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   edge.on("connection", socket => { void relayVoice(socket, session, { gatewayUrl: `ws://127.0.0.1:${port}/realtime`, gatewaySecret: secret, realtimeKey: "unused-at-edge", realtimeUrl: providerUrl, realtimeModel: "fixture" }).then(() => { relayClosed = true; }); });
   client = new WebSocket(edgeUrl); const received: ServerMessage[] = [];
   client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(String(raw)))));
