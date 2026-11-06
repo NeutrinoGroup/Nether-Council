@@ -1,11 +1,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import WebSocket from "ws";
 import { ServerMessage, Session, type CharacterId, type Locale } from "@nether/contracts";
 import { CHARACTER_IDS } from "@nether/party-core";
 import { signTicket } from "../apps/web/src/shared/server/tickets";
 import { loadLocalEnv } from "./lib/env";
 import { getSpokenUtterance, generateSilenceChunks } from "./lib/audio-samples";
+import { assessLoad, type ConnectionWindow } from "./lib/load-evidence";
 
 loadLocalEnv();
 
@@ -27,6 +29,7 @@ interface ClientResult {
   status: "success" | "partial" | "failed";
   errors: string[];
   durationMs: number;
+  connections: ConnectionWindow[];
 }
 
 interface LoadTestSummary {
@@ -40,6 +43,10 @@ interface LoadTestSummary {
   successRatePercent: number;
   targetAchieved: boolean; // >= 29/30
   durationRequirementMet: boolean; // >= 120s
+  commonReadyMs: number;
+  inputKind: "synthetic_macos_tts_not_human_acceptance";
+  localRevision: string;
+  deploymentRevision: string;
   clients: ClientResult[];
 }
 
@@ -54,6 +61,13 @@ const origin = target.origin;
 const totalClients = Math.max(1, Number(flag("--clients") ?? 10));
 const turnsPerClient = Math.max(1, Number(flag("--turns") ?? 3));
 const minDurationSeconds = Math.max(10, Number(flag("--duration") ?? 120));
+if (!process.argv.includes("--real-provider")) throw new Error("Billable test requires --real-provider");
+if (!/^https:\/\/(?:nether-council(?:-[a-z0-9-]+)?\.vercel\.app|ghost\.oodai\.space)$/.test(origin)) throw new Error("Use this project's HTTPS deployment");
+if (![totalClients, turnsPerClient, minDurationSeconds].every(Number.isInteger) || totalClients > 10 || turnsPerClient > 3 || minDurationSeconds > 150) throw new Error("Use at most 10 clients, 3 turns, and 150 seconds");
+if ((process.env.CAMPAIGN_SIGNING_SECRET?.length ?? 0) < 32) throw new Error("CAMPAIGN_SIGNING_SECRET is missing");
+// Read all inputs before creating a paid connection. A missing fixture must never become a tone.
+for (const locale of ["zh", "en"] as const) for (let turn = 1; turn <= turnsPerClient; turn++) getSpokenUtterance(locale, turn);
+let latestReadyAt = 0;
 
 console.log(`Starting Pilot Load Test:`);
 console.log(`- Target: ${origin}`);
@@ -93,11 +107,18 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
     status: "failed",
     errors: [],
     durationMs: 0,
+    connections: [],
   };
 
   const RECONNECT_DELAYS = [2000, 5000];
 
   for (let attempt = 0; attempt <= RECONNECT_DELAYS.length; attempt++) {
+    let activeSocket: WebSocket | undefined;
+    let connection: ConnectionWindow | undefined;
+    let connectionEnded = false;
+    const endConnection = () => {
+      if (connection && !connectionEnded) { connection.closedAtMs = performance.now(); connectionEnded = true; }
+    };
     if (attempt > 0) {
       result.reconnects++;
       const delay = RECONNECT_DELAYS[attempt - 1];
@@ -123,6 +144,7 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
         redirect: "error",
         headers: { ...trustedHeaders, Origin: origin, "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, locale, mode: "personal", invite }),
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (!admissionRes.ok) {
@@ -144,7 +166,10 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
       const wsUrl = `${origin.replace("https:", "wss:").replace("http:", "ws:")}/api/ws`;
       const ws = new WebSocket(wsUrl, {
         headers: { ...trustedHeaders, Origin: origin, Cookie: cookie },
+        handshakeTimeout: 20_000,
       });
+      activeSocket = ws;
+      ws.on("close", endConnection);
 
       let seq = 0;
       const send = (type: string, extra: Record<string, unknown> = {}) => {
@@ -163,6 +188,7 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
       // Await session.ready and first greeting audio
       const greetingOk = await new Promise<boolean>((resolve) => {
         let greetingCancelled = false;
+        let greetingAudioReceived = false;
         let greetingResponseId: string | undefined;
         const deadline = setTimeout(() => {
           if (!greetingCancelled) {
@@ -179,7 +205,14 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
         const onGreetingMessage = (raw: WebSocket.RawData) => {
           try {
             const msg = ServerMessage.parse(JSON.parse(raw.toString()));
+            if (msg.sessionId !== session.id || msg.epoch !== result.reconnects) return;
             if (msg.type === "session.ready") {
+              if (!connection) {
+                const readyAtMs = performance.now();
+                connection = { readyAtMs, closedAtMs: readyAtMs };
+                result.connections.push(connection);
+                latestReadyAt = Math.max(latestReadyAt, readyAtMs);
+              }
               result.connected = true;
               if (result.readyMs < 0) {
                 result.readyMs = Math.round(performance.now() - startTime);
@@ -190,9 +223,10 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
             } else if (msg.type === "response.started") {
               greetingResponseId = msg.responseId;
             } else if (msg.type === "audio.delta") {
+              greetingAudioReceived = true;
               const bytes = Buffer.from(msg.audio, "base64").length;
               result.audioBytesReceived += bytes;
-              if (result.greetingMs < 0) {
+              if (!greetingCancelled) {
                 result.greetingMs = Math.round(performance.now() - startTime);
                 greetingCancelled = true;
                 // Cancel greeting cleanly
@@ -204,7 +238,7 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
                 }, 600);
               }
             } else if (msg.type === "response.done") {
-              if (greetingCancelled || msg.responseId === greetingResponseId) {
+              if (greetingAudioReceived && (greetingCancelled || msg.responseId === greetingResponseId)) {
                 clearTimeout(deadline);
                 ws.off("message", onGreetingMessage);
                 setTimeout(() => resolve(true), 200);
@@ -240,10 +274,11 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
       let allTurnsCompleted = true;
       for (let turn = result.turnsSucceeded + 1; turn <= turnsPerClient; turn++) {
         result.turnsAttempted++;
-        const turnStart = performance.now();
         let turnSpeechEnd = 0;
         let turnResponseId: string | undefined;
+        let speechStarted = false;
         let firstAudioReceived = false;
+        let userTranscribed = false;
         let turnAudioBytes = 0;
         let turnLatency = -1;
 
@@ -269,7 +304,14 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
           const onMessage = (raw: WebSocket.RawData) => {
             try {
               const event = ServerMessage.parse(JSON.parse(raw.toString()));
-              if (event.type === "response.started") {
+              if (event.sessionId !== session.id || event.epoch !== result.reconnects) return;
+              if (event.type === "speech.started") {
+                speechStarted = true; turnResponseId = undefined;
+                firstAudioReceived = false; turnAudioBytes = 0; userTranscribed = false;
+              } else if (speechStarted && event.type === "caption" && event.caption.speaker === "user" && event.caption.final && event.caption.sourceText.trim()) {
+                userTranscribed = true;
+                if (turnAudioBytes >= 48000) { send("response.cancel", { responseId: turnResponseId }); finishTurn(true); }
+              } else if (speechStarted && event.type === "response.started") {
                 turnResponseId = event.responseId;
               } else if (event.type === "audio.delta") {
                 if (!turnResponseId || event.responseId !== turnResponseId) return;
@@ -279,17 +321,20 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
 
                 if (!firstAudioReceived) {
                   firstAudioReceived = true;
-                  turnLatency = Math.round(performance.now() - (turnSpeechEnd || turnStart));
-                  result.latenciesMs.push(turnLatency);
+                  // Never label input-upload duration or added VAD silence as reply latency.
+                  if (turnSpeechEnd) {
+                    turnLatency = Math.round(performance.now() - turnSpeechEnd);
+                    result.latenciesMs.push(turnLatency);
+                  }
                 }
 
-                // Collect sufficient response audio (8 chunks = ~2s audio), then cancel cleanly for next turn
-                if (turnAudioBytes >= 48000) {
+                // 48,000 bytes at 24kHz PCM16 = one second; require a confirmed user turn too.
+                if (turnAudioBytes >= 48000 && userTranscribed) {
                   send("response.cancel", { responseId: event.responseId });
                   setTimeout(() => finishTurn(true), 500);
                 }
               } else if (event.type === "response.done") {
-                if (firstAudioReceived && (!turnResponseId || event.responseId === turnResponseId)) {
+                if (firstAudioReceived && userTranscribed && (!turnResponseId || event.responseId === turnResponseId)) {
                   finishTurn(true);
                 }
               } else if (event.type === "error") {
@@ -307,13 +352,14 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
         // Natural pause before starting turn
         await new Promise(r => setTimeout(r, 600));
 
-        // Stream real spoken audio sample for this turn
+        // Pace the documented synthetic TTS fixture at its real 16kHz duration.
         const utterance = getSpokenUtterance(locale, turn);
         for (const chunk of utterance) {
           send("audio.append", { audio: chunk.base64 });
           result.audioBytesSent += chunk.bytes;
           await new Promise(r => setTimeout(r, 100));
         }
+        turnSpeechEnd = performance.now();
 
         // Stream silence at 100ms interval to trigger VAD
         const silence = generateSilenceChunks(15);
@@ -322,7 +368,6 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
           result.audioBytesSent += chunk.bytes;
           await new Promise(r => setTimeout(r, 100));
         }
-        turnSpeechEnd = performance.now();
 
         const turnOk = await turnPromise;
         if (turnOk) {
@@ -334,6 +379,31 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
         }
       }
 
+      // Keep EACH ready socket alive. The latest ready socket sets a shared hold deadline;
+      // waiting after sockets are closed cannot satisfy this requirement.
+      if (allTurnsCompleted) {
+        let lastPong = performance.now();
+        let lastPing = 0;
+        const onPong = (raw: WebSocket.RawData) => {
+          try {
+            const parsed = ServerMessage.safeParse(JSON.parse(raw.toString()));
+            if (parsed.success && parsed.data.type === "pong" && parsed.data.sessionId === session.id && parsed.data.epoch === result.reconnects) lastPong = performance.now();
+          } catch { /* Invalid frames cannot renew the liveness deadline. */ }
+        };
+        ws.on("message", onPong);
+        const silence = generateSilenceChunks(1)[0];
+        try {
+          while (ws.readyState === WebSocket.OPEN && performance.now() < latestReadyAt + minDurationSeconds * 1000) {
+            if (performance.now() - lastPong > 10_000) throw new Error("HOLD_PONG_TIMEOUT");
+            if (performance.now() - lastPing > 2_000) { send("ping"); lastPing = performance.now(); }
+            send("audio.append", { audio: silence.base64 });
+            result.audioBytesSent += silence.bytes;
+            await new Promise(r => setTimeout(r, 100));
+          }
+        } finally { ws.off("message", onPong); }
+        if (ws.readyState !== WebSocket.OPEN) { allTurnsCompleted = false; result.errors.push("HOLD_CONNECTION_CLOSED"); }
+      }
+      endConnection();
       // Gracefully finish
       send("session.end");
       ws.close(1000, "Normal Closure");
@@ -343,7 +413,10 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
         break;
       }
     } catch (err: unknown) {
-      result.errors.push(err instanceof Error ? err.message : String(err));
+      result.errors.push(err instanceof Error && /^[A-Z_]{1,80}$/.test(err.message) ? err.message : "CLIENT_OPERATION_FAILED");
+    } finally {
+      endConnection();
+      activeSocket?.terminate();
     }
   }
 
@@ -358,10 +431,11 @@ async function runClient(clientId: number, startDelayMs: number): Promise<Client
 async function main() {
   const testStart = performance.now();
   const startedAt = new Date().toISOString();
+  const health = await fetch(`${origin}/api/health`, { headers: trustedHeaders, signal: AbortSignal.timeout(15_000) });
+  if (!health.ok) throw new Error(`Health HTTP ${health.status}`);
+  const deploymentRevision = String((await health.json()).revision ?? "unknown");
 
-  const staggerIntervalMs = totalClients > 1
-    ? Math.max(5000, Math.ceil(((minDurationSeconds - 50) * 1000) / (totalClients - 1)))
-    : 0;
+  const staggerIntervalMs = 0;
 
   console.log(`Staggering ${totalClients} clients by ${staggerIntervalMs}ms intervals...`);
 
@@ -372,14 +446,6 @@ async function main() {
   }
 
   const results = await Promise.all(clientPromises);
-  const totalElapsed = (performance.now() - testStart) / 1000;
-
-  // If elapsed time is slightly less than minDurationSeconds, wait until minDurationSeconds is reached
-  if (totalElapsed < minDurationSeconds) {
-    const remainingMs = Math.ceil((minDurationSeconds - totalElapsed) * 1000);
-    console.log(`Waiting remaining ${Math.round(remainingMs / 1000)}s to satisfy duration requirement (>= ${minDurationSeconds}s)...`);
-    await new Promise(r => setTimeout(r, remainingMs));
-  }
 
   const totalDurationSeconds = Math.round((performance.now() - testStart) / 1000);
   const completedAt = new Date().toISOString();
@@ -387,8 +453,7 @@ async function main() {
   const totalTurnsAttempted = results.reduce((acc, c) => acc + c.turnsAttempted, 0);
   const totalTurnsSucceeded = results.reduce((acc, c) => acc + c.turnsSucceeded, 0);
   const successRatePercent = totalTurnsAttempted > 0 ? Math.round((totalTurnsSucceeded / totalTurnsAttempted) * 1000) / 10 : 0;
-  const targetAchieved = totalTurnsSucceeded >= 29 && totalTurnsAttempted >= 30;
-  const durationRequirementMet = totalDurationSeconds >= minDurationSeconds;
+  const { targetAchieved, durationRequirementMet, commonReadyMs } = assessLoad(results, minDurationSeconds * 1000);
 
   const summary: LoadTestSummary = {
     startedAt,
@@ -401,19 +466,28 @@ async function main() {
     successRatePercent,
     targetAchieved,
     durationRequirementMet,
+    commonReadyMs,
+    inputKind: "synthetic_macos_tts_not_human_acceptance",
+    localRevision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+    deploymentRevision,
     clients: results,
   };
 
   mkdirSync("artifacts/g5-pilot", { recursive: true });
-  writeFileSync("artifacts/g5-pilot/load-report.json", JSON.stringify(summary, null, 2));
+  const runId = startedAt.replace(/[:.]/g, "-");
+  const json = JSON.stringify(summary, null, 2);
+  writeFileSync(`artifacts/g5-pilot/load-${runId}.json`, json, { mode: 0o600 });
+  writeFileSync("artifacts/g5-pilot/load-report.json", json, { mode: 0o600 });
 
   // Also write Markdown report
   const markdown = `# Gate G5 T16 压力与并发测试报告 (10 客户端并发)
 
 - **测试时间**: ${startedAt} ~ ${completedAt}
-- **持续总时长**: ${totalDurationSeconds}s (目标要求: ≥ 120s -> ${durationRequirementMet ? "✅ 达标" : "❌ 未达标"})
+- **进程总时长**: ${totalDurationSeconds}s（不作为连接时长证据）
+- **所有独立客户端连续共同 ready 时长**: ${(commonReadyMs / 1000).toFixed(3)}s (目标 ≥120s：${durationRequirementMet ? "通过" : "未通过"})
+- **输入**: 仓库 macOS TTS 合成语音，不是真人测试；使用依据须另行确认
 - **目标中继端点**: ${origin}
-- **并发客户端数**: ${totalClients} 个独立真实 API 客户端
+- **请求客户端数**: ${totalClients}（实际共同连接时长见上）
 - **总话轮数**: ${totalTurnsSucceeded} / ${totalTurnsAttempted} (成功率: ${successRatePercent}%)
 - **T16 验收标准 (≥ 29/30)**: ${targetAchieved ? "✅ 通过" : "❌ 未通过"}
 
@@ -442,4 +516,4 @@ ${results.flatMap(c => c.errors.map(e => `- 客户端 #${c.clientId}: ${e}`)).jo
   }
 }
 
-void main();
+void main().catch(() => { console.error("LOAD_PREFLIGHT_FAILED: check configuration, deployment and fixtures; no credentials or provider messages are logged."); process.exitCode = 1; });

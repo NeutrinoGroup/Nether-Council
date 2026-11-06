@@ -77,7 +77,7 @@ pnpm invite:create --url https://nether-council.vercel.app --hours 24
 ### 4.4 线上真实多客户端全双工压测
 ```bash
 # 启动 10 个独立客户端进行 3 轮真实语音交互（持续 120 秒）
-pnpm test:load --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
+pnpm test:load --real-provider --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
 ```
 
 ### 4.5 单角色真实浏览器验证（产生 API 用量）
