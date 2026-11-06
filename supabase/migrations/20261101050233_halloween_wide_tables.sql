@@ -56,7 +56,7 @@ create table nether.outbox (
   id uuid primary key default gen_random_uuid(),
   event_key uuid not null unique,
   call_id uuid not null references nether.calls(id) on delete cascade,
-  event_type text not null check (event_type in ('conversation_started','conversation_completed','card_rendered','card_download_created','share_invoked','invite_copied','referred_conversation_started','connection_error','latency')),
+  event_type text not null check (event_type in ('conversation_started','conversation_completed','card_rendered','card_download_clicked','card_download_created','share_invoked','invite_copied','referred_conversation_started','connection_error','latency')),
   payload jsonb not null check (jsonb_typeof(payload) = 'object' and octet_length(payload::text) <= 4096),
   status text not null default 'pending' check (status in ('pending','processing','done','dead')),
   attempts integer not null default 0 check (attempts >= 0),
