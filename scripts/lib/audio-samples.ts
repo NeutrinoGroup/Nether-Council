@@ -6,7 +6,8 @@ export interface PcmChunk {
 }
 
 /**
- * Load a real spoken speech sample from PCM fixtures and slice into 100ms chunks (3200 bytes).
+ * Load the repository's synthetic macOS TTS fixture, PCM16 mono at 16kHz.
+ * These samples never count as a human conversation or listening record.
  */
 export function getSpokenUtterance(locale: "zh" | "en", turn: number): PcmChunk[] {
   const turnIndex = ((turn - 1) % 3) + 1;
@@ -14,6 +15,7 @@ export function getSpokenUtterance(locale: "zh" | "en", turn: number): PcmChunk[
 
   if (existsSync(fixturePath)) {
     const raw = readFileSync(fixturePath);
+    if (!raw.length || raw.length % 2 || raw.length > 960_000) throw new Error(`Invalid PCM fixture: ${fixturePath}`);
     const chunkSize = 3200; // 100ms at 16kHz 16-bit mono
     const chunks: PcmChunk[] = [];
     for (let offset = 0; offset < raw.length; offset += chunkSize) {
@@ -26,8 +28,7 @@ export function getSpokenUtterance(locale: "zh" | "en", turn: number): PcmChunk[
     return chunks;
   }
 
-  // Fallback if file not on disk: generate synthetic cadence
-  return generateSyntheticSpeech(2.0);
+  throw new Error(`Missing PCM fixture: ${fixturePath}`);
 }
 
 /**

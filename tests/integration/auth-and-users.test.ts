@@ -1,4 +1,5 @@
-import { describe, expect, test, beforeEach } from "vitest";
+import { randomBytes } from "node:crypto";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { generateQrDataUrl } from "@/features/card/canvas";
 import { syncUserToDatabase, getUserById, getUserByReferralCode, clearMemoryUsersForTests } from "@/lib/userDb";
 import { POST as googleExchangePost } from "@/app/api/auth/google/exchange/route";
@@ -6,8 +7,12 @@ import { GET as sessionGet } from "@/app/api/auth/session/route";
 
 describe("Google Auth, Supabase Users & Share Referral QR", () => {
   beforeEach(() => {
+    vi.stubEnv("AUTH_SIGNING_SECRET", randomBytes(32).toString("hex"));
+    vi.stubEnv("NETHER_AUTH_DEMO", "true");
     clearMemoryUsersForTests();
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   test("syncUserToDatabase stores user record and generates unique referral code", async () => {
     const user = await syncUserToDatabase({
@@ -33,7 +38,7 @@ describe("Google Auth, Supabase Users & Share Referral QR", () => {
   test("Google auth exchange endpoint handles demo sandbox identity without requiring live keys", async () => {
     const request = new Request("http://localhost:3100/api/auth/google/exchange", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Origin: "http://localhost:3100" },
       body: JSON.stringify({ id_token: "demo_verified_google_identity" }),
     });
 
@@ -49,18 +54,19 @@ describe("Google Auth, Supabase Users & Share Referral QR", () => {
     expect(data.profile.referralCode).toBeDefined();
 
     // Verify user is retrievable via /api/auth/session
-    const sessionReq = new Request(`http://localhost:3100/api/auth/session?userId=${data.profile.id}`);
+    const cookie = response.headers.get("set-cookie")!.split(";")[0];
+    const sessionReq = new Request("http://localhost:3100/api/auth/session", { headers: { cookie } });
     const sessionRes = await sessionGet(sessionReq);
     expect(sessionRes.status).toBe(200);
     const sessionData = await sessionRes.json();
     expect(sessionData.authenticated).toBe(true);
-    expect(sessionData.user.id).toBe(data.profile.id);
+    expect(sessionData.profile.id).toBe(data.profile.id);
   });
 
   test("Google auth exchange rejects empty payloads cleanly with 400", async () => {
     const request = new Request("http://localhost:3100/api/auth/google/exchange", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Origin: "http://localhost:3100" },
       body: JSON.stringify({}),
     });
 

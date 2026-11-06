@@ -73,7 +73,7 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
           <GoogleIcon />
           <span>{isZh ? "Google 登录" : "Sign in"}</span>
         </button>
-        <button
+        {process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_NETHER_AUTH_DEMO === "true" && <button
           onClick={() => void loginDemo()}
           style={{
             background: "none",
@@ -87,7 +87,7 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
           title={isZh ? "无需 Google Key，一键测试登录" : "Demo sandbox sign in"}
         >
           {isZh ? "体验登录" : "Demo"}
-        </button>
+        </button>}
       </div>
     );
   }
@@ -151,7 +151,7 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
         </button>
 
         <button
-          onClick={logout}
+          onClick={() => void logout()}
           style={{
             background: "none",
             border: 0,

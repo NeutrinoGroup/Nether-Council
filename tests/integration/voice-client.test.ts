@@ -167,3 +167,22 @@ test("soul effects follow current response, survive reconnect, and never replay 
   current.stop("next_guest"); action("b", "late-after-stop", "change_mood", { mood: "laughing" });
   expect(view?.soup?.mood).toBe("mystical");
 });
+
+test("buffered playback does not trigger a network downgrade before manual interruption", async () => {
+  let view: VoiceView | undefined;
+  current = new VoiceClient(v => { view = v; }, { demoFallback: true });
+  await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (event: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }) });
+  send({ type: "session.ready", session });
+  send({ type: "response.started", responseId: "buffered" });
+  audio.isPlaying.mockReturnValue(true);
+  send({ type: "audio.delta", responseId: "buffered", audio: "AAA=" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(view).toMatchObject({ phase: "speaking" });
+  expect(view?.demo).not.toBe(true);
+  current.interrupt();
+  expect(socket.sent.filter(e => e.type === "response.cancel")).toEqual([expect.objectContaining({ responseId: "buffered" })]);
+  expect(view).toMatchObject({ phase: "listening" });
+  audio.isPlaying.mockReturnValue(false);
+});

@@ -48,7 +48,7 @@
     "discardedExperiment": "Precomputed tangent experiment produced one zero tangent; not shipped."
   },
   "animationPlan": {
-    "mouth": "Independently positioned mouth mesh; actual playback RMS only. Calibrate against rendered face.",
+    "mouth": "No synthetic mouth overlay. The baked model face stays unchanged during audio playback.",
     "eyes": "Baked eyes remain static; no facial rig claimed.",
     "body": "Small whole-body idle/listening/celebration transforms; never use body stretch as mouth."
   },

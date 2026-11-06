@@ -41,7 +41,7 @@ pnpm test:e2e
 pnpm env:vercel
 pnpm exec vercel deploy --prod --regions hkg1 --local-config apps/web/vercel.json --scope oodai --non-interactive --yes
 pnpm smoke --url https://nether-council.vercel.app
-pnpm test:load --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
+pnpm test:load --real-provider --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
 pnpm invite:create --url https://nether-council.vercel.app --hours 2
 ```
 

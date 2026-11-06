@@ -15,8 +15,7 @@ let session: { id: string; characterId: string; locale: string; mode: string; cr
 let seq = 0;
 const send = (event: object, socket = Socket.instances.at(-1)!) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: session.id, epoch: 0, seq: seq++, ...event }) });
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks(); Socket.instances = []; seq = 0;
-  audio.isPlaying.mockReturnValue(false);
+  vi.useFakeTimers(); vi.clearAllMocks(); audio.isPlaying.mockReturnValue(false); Socket.instances = []; seq = 0;
   const now = Date.now(); session = { id: crypto.randomUUID(), characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   vi.stubGlobal("location", { protocol: "https:", host: "example.test" }); vi.stubGlobal("WebSocket", Socket);
   vi.stubGlobal("sessionStorage", { getItem: vi.fn(() => null), setItem: vi.fn() });

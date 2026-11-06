@@ -35,7 +35,7 @@ describe("T13 Character Roster & Definitions", () => {
       expect(meta.topics.en.length).toBeGreaterThanOrEqual(3);
       expect(meta.cardTheme.bgGradient).toHaveLength(2);
       expect(meta.cardTheme.accent).toMatch(/^#[0-9a-fA-F]{6}$/);
-      expect(meta.posterUrl).toMatch(/^\/posters\/[a-z-]+\.png$/);
+      expect(new URL(meta.posterUrl, "https://nether.test").pathname).toMatch(/^\/posters\/[a-z-]+\.png$/);
     }
   });
 

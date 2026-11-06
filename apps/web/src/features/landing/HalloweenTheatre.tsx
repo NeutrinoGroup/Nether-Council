@@ -104,7 +104,7 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
     return () => { media.revert(); progress.current.value = 0; };
   }, { scope: root, dependencies: [locale], revertOnUpdate: true });
 
-  const poster = <div className="theatre-poster"><Image src="/posters/meng-po.png" width={500} height={500} priority alt={locale === "zh" ? "孟婆抱着南瓜忘忧汤" : "Meng Po holding her pumpkin brew"} unoptimized /></div>;
+  const poster = <div className="theatre-poster"><Image src={getCharacter("meng-po").posterUrl} width={500} height={500} priority alt={locale === "zh" ? "孟婆抱着南瓜忘忧汤" : "Meng Po holding her pumpkin brew"} unoptimized /></div>;
 
   return (
     <main ref={root} className="theatre" data-phase={phase} lang={locale === "zh" ? "zh-CN" : "en"}>

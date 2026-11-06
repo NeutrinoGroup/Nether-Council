@@ -22,6 +22,7 @@ export function GoogleAuthCallback() {
     if (claimedCode === parsed.code) return;
     claimedCode = parsed.code;
 
+    const state = url.searchParams.get("state") || "";
     url.searchParams.delete("code");
     url.searchParams.delete("scope");
     url.searchParams.delete("authuser");
@@ -29,20 +30,14 @@ export function GoogleAuthCallback() {
     url.searchParams.delete("state");
     window.history.replaceState({}, document.title, url.toString());
 
-    let cancelled = false;
-    exchangeGoogleCode(parsed.code)
+    exchangeGoogleCode(parsed.code, state)
       .then((profile) => {
-        if (cancelled) return;
         recordGoogleProfile(profile);
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
         setErrorMsg(err instanceof Error ? err.message : String(err));
       });
 
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   if (!errorMsg) return null;

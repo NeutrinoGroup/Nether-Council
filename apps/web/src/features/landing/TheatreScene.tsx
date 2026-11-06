@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei/core/Gltf";
+import { getCharacter } from "@nether/party-core";
 import type { CharacterId } from "@nether/contracts";
-import { Box3, MathUtils, type Group, type Mesh, type PointLight, type AmbientLight, type DirectionalLight } from "three";
+import { Box3, MathUtils, type Group, type PointLight, type AmbientLight, type DirectionalLight } from "three";
 import { CameraRig, type EncounterPhase } from "../world3d/CameraRig";
 import { HalloweenRelics } from "../world3d/HalloweenRelics";
 import { NetherAtmosphere } from "../world3d/NetherAtmosphere";
@@ -22,10 +23,10 @@ type Props = {
 };
 
 function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }: Props & { pointer: MutableRefObject<{ x: number; y: number }> }) {
-  const { scene } = useGLTF("/models/meng-po.glb");
+  const { scene } = useGLTF(getCharacter("meng-po").modelUrl!);
   // Share immutable GLB geometry/textures with /play, never dispose loader assets.
   const model = useMemo(() => scene.clone(true), [scene]);
-  const body = useRef<Group>(null), mouth = useRef<Mesh>(null), lantern = useRef<PointLight>(null);
+  const body = useRef<Group>(null), lantern = useRef<PointLight>(null);
   const placement = useMemo(() => {
     const box = new Box3().setFromObject(model);
     const scale = 2.9 / (box.max.y - box.min.y);
@@ -45,10 +46,6 @@ function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }
       lantern.current.color.set(soulColors[state?.soup?.mood ?? "healing"]);
       lantern.current.intensity = 3.5 + (reduced ? 0 : Math.sin(clock.elapsedTime * 2.1) * 0.4 + Math.sin(clock.elapsedTime * 6.3) * 0.12) + level.high * 16 + level.character * 3;
     }
-    if (mouth.current) {
-      mouth.current.visible = level.character > 0.025;
-      mouth.current.scale.y = Math.max(0.0001, level.character * 0.018);
-    }
     if (!body.current) return;
     const p = reduced || phase !== "landing" ? 0 : progress.current.value;
     const dt = Math.min(delta, 0.1);
@@ -61,7 +58,6 @@ function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }
   return <group ref={body}>
     <group {...placement}>
       <primitive object={model} dispose={null} />
-      <mesh ref={mouth} position={[0.0, 0.852, 0.078]} scale={[0.015, 0.0001, 0.003]} visible={false}><sphereGeometry args={[1, 16, 10]} /><meshBasicMaterial color="#511a2b" /></mesh>
     </group>
     <pointLight ref={lantern} position={[0.03, 1.55, 0.4]} color="#FF6B00" intensity={4.5} distance={4.5} decay={2} />
   </group>;
