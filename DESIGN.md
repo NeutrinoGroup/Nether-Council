@@ -220,11 +220,11 @@ The optional nickname field uses a square dark fill, bone text and a thin bone b
 
 ### Conversation and Playback Line
 
-The square conversation field groups display name, role, real character or existing poster, opening, worded live status and readable captions. Its desktop insets remain 40px by 42px, reducing at the encounter breakpoints. Captions wrap and scroll within bounded areas. The transparent 36px playback line has a fine top rule and square pumpkin bars; their scale follows measured playback rather than fabricated activity. Reduced motion holds the bars at baseline while direct speech-mouth feedback remains available in the voice scene.
+The square conversation field groups display name, role, real character or existing poster, opening, worded live status and readable captions. Its desktop insets remain 40px by 42px, reducing at the encounter breakpoints. Captions wrap and scroll within bounded areas. The transparent 36px playback line has a fine top rule and square pumpkin bars; their scale follows measured playback rather than fabricated activity. Reduced motion holds the bars at baseline while worded speech states remain available in the voice scene.
 
 ### Character Stage and Fallback
 
-Home loads the existing Meng Po GLB on a transparent canvas with warm directional lighting. A matching existing poster remains while loading or after a boundary failure, with a visible localized loading/failure label. The encounter remains accessible when home 3D is unavailable. Other cast images are posters; do not imply additional models exist. The landing turns the whole model as a staged object; voice playback uses the existing independently driven mouth. Do not describe this as a facial rig.
+Home loads the existing Meng Po GLB on a transparent canvas with warm directional lighting. A matching existing poster remains while loading or after a boundary failure, with a visible localized loading/failure label. The encounter remains accessible when home 3D is unavailable. Other cast images are posters; do not imply additional models exist. The landing turns the whole model as a staged object; voice playback uses audio-reactive lighting without a synthetic mouth overlay. Do not describe this as a facial rig.
 
 ### Exported Identity and Host Exceptions
 

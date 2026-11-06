@@ -103,7 +103,7 @@ test("Chinese entry shows its character and has no horizontal overflow", async (
 });
 
 test("model failure names the downgrade and keeps the voice entry available", async ({ page }) => {
-  await page.route("**/models/meng-po.glb", route => route.fulfill({ status: 503, body: "Asset unavailable" }));
+  await page.route("**/models/meng-po.glb*", route => route.fulfill({ status: 503, body: "Asset unavailable" }));
   await page.goto("/play?invite=test-fixture&lang=en");
   await expect(page.getByText("3D is unavailable. Voice still works.", { exact: true })).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole("button", { name: "Turn on mic & meet Meng Po" })).toBeEnabled();

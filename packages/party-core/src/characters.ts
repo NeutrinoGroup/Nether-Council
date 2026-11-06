@@ -61,8 +61,8 @@ export const CHARACTERS: Record<CharacterId, CharacterMeta> = {
       zh: "请按进门阶段热情招呼：哟，大万圣节不去要糖，来老婆子这儿啦？南瓜肉桂拿铁味孟婆汤热着呢，今儿受啥窝囊气了？只说这两句，先不调用仪式。",
       en: "Greet me as a warm, cheeky cyber grandma in 2 short sentences. Mention Halloween and your pumpkin cinnamon latte soul soup, then ask what earthly nonsense upset me today. Do not start the ritual yet.",
     },
-    modelUrl: "/models/meng-po.glb",
-    posterUrl: "/posters/meng-po.png",
+    modelUrl: "/models/meng-po.glb?v=b159a51a",
+    posterUrl: "/posters/meng-po.png?v=ffc33d1c",
   },
   "hei-wuchang": {
     id: "hei-wuchang",

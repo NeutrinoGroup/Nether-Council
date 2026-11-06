@@ -33,7 +33,9 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   const canvas = page.locator(".theatre-stage canvas");
   await expect.poll(() => canvas.getAttribute("data-character-level").then(Number), { timeout: 15000 }).toBeGreaterThan(0.1);
   await expect.poll(() => canvas.getAttribute("data-high-energy").then(Number), { timeout: 15000 }).toBeGreaterThan(0.01);
-  await page.getByRole("button", { name: "让我说一句" }).click();
+  const interruptButton = page.getByRole("button", { name: "让我说一句" });
+  await expect(interruptButton).toBeEnabled({ timeout: 15000 });
+  await interruptButton.click();
   await expect.poll(() => messages.some(e => e.type === "response.cancel"), { timeout: 15000 }).toBe(true);
   send({ type: "response.done", responseId: "reply" });
   await expect.poll(() => canvas.getAttribute("data-character-level").then(Number), { timeout: 15000 }).toBeLessThan(0.01);

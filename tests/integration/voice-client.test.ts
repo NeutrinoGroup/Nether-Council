@@ -140,6 +140,33 @@ test("finalizing drops late old audio and wrong-session identity, then respects 
   expect(audio.stop).toHaveBeenCalledOnce();
 });
 
+test("soul effects follow current response, survive reconnect, and never replay a ritual", async () => {
+  let view: VoiceView | undefined; current = new VoiceClient(v => { view = v; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (event: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }) });
+  const action = (responseId: string, callId: string, name: string, args: object) => send({ type: "soul.action", responseId, callId, action: { name, arguments: args } });
+  send({ type: "response.started", responseId: "a" });
+  action("a", "m1", "change_mood", { mood: "angry_support" });
+  action("a", "w1", "extract_worry_keyword", { keyword: "改不完的需求" });
+  action("a", "w2", "extract_worry_keyword", { keyword: "改不完的需求" });
+  expect(view?.soup).toMatchObject({ mood: "angry_support", worries: ["改不完的需求"] });
+  current.interrupt(); action("a", "stale", "trigger_soul_soup_ritual", { blessing_quote: "stale" });
+  expect(view?.soup?.ritual).toBeUndefined();
+  send({ type: "response.started", responseId: "b" });
+  action("b", "r1", "trigger_soul_soup_ritual", { blessing_quote: "宜：要糖，忌：内耗" });
+  action("b", "r2", "trigger_soul_soup_ritual", { blessing_quote: "重复" });
+  expect(view?.soup?.ritual).toEqual({ callId: "r1", blessing: "宜：要糖，忌：内耗" });
+  send({ type: "response.done", responseId: "b" });
+  action("b", "late-after-done", "change_mood", { mood: "laughing" });
+  expect(view?.soup?.mood).toBe("mystical");
+  send({ type: "caption", caption: { sessionId: id, epoch: 0, responseId: "u1", segmentId: "u1", revision: 1, sourceLocale: "en", sourceText: "My boss changed every requirement.", speaker: "user", final: true } });
+  socket.onclose?.({ code: 1011 }); await vi.advanceTimersByTimeAsync(1500);
+  const next = Socket.instances.at(-1)!; next.onopen?.();
+  expect(next.sent[0]).toMatchObject({ resumeUserTurns: 1, ritualCompleted: true });
+  expect(view?.soup?.ritual?.callId).toBe("r1");
+  current.stop("next_guest"); action("b", "late-after-stop", "change_mood", { mood: "laughing" });
+  expect(view?.soup?.mood).toBe("mystical");
+});
 
 test("buffered playback does not trigger a network downgrade before manual interruption", async () => {
   let view: VoiceView | undefined;

@@ -3,11 +3,14 @@
 import { Suspense, useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei/core/Gltf";
+import { getCharacter } from "@nether/party-core";
 import type { CharacterId } from "@nether/contracts";
-import { Box3, MathUtils, type Group, type Mesh, type PointLight, type AmbientLight, type DirectionalLight } from "three";
+import { Box3, MathUtils, type Group, type PointLight, type AmbientLight, type DirectionalLight } from "three";
 import { CameraRig, type EncounterPhase } from "../world3d/CameraRig";
 import { HalloweenRelics } from "../world3d/HalloweenRelics";
 import { NetherAtmosphere } from "../world3d/NetherAtmosphere";
+import { SoulPumpkin } from "../world3d/SoulPumpkin";
+import { soulColors } from "../world3d/soul-colors";
 import type { VoiceView } from "../voice/client";
 import type { AudioLevels } from "../voice/useAudioReactive";
 
@@ -16,13 +19,14 @@ type Props = {
   paused: boolean; reduced: boolean; phase: EncounterPhase; onArrive: () => void;
   voice?: MutableRefObject<VoiceView | undefined>;
   audio: MutableRefObject<AudioLevels>; characterId: CharacterId;
+  soup?: VoiceView["soup"];
 };
 
 function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }: Props & { pointer: MutableRefObject<{ x: number; y: number }> }) {
-  const { scene } = useGLTF("/models/meng-po.glb");
+  const { scene } = useGLTF(getCharacter("meng-po").modelUrl!);
   // Share immutable GLB geometry/textures with /play, never dispose loader assets.
   const model = useMemo(() => scene.clone(true), [scene]);
-  const body = useRef<Group>(null), mouth = useRef<Mesh>(null), lantern = useRef<PointLight>(null);
+  const body = useRef<Group>(null), lantern = useRef<PointLight>(null);
   const placement = useMemo(() => {
     const box = new Box3().setFromObject(model);
     const scale = 2.9 / (box.max.y - box.min.y);
@@ -38,10 +42,9 @@ function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }
     gl.domElement.dataset.characterLevel = level.character.toFixed(3);
     gl.domElement.dataset.userLevel = level.user.toFixed(3);
     gl.domElement.dataset.highEnergy = level.high.toFixed(3);
-    if (lantern.current) lantern.current.intensity = 3.5 + (reduced ? 0 : Math.sin(clock.elapsedTime * 2.1) * 0.4 + Math.sin(clock.elapsedTime * 6.3) * 0.12) + level.high * 16 + level.character * 3;
-    if (mouth.current) {
-      mouth.current.visible = level.character > 0.025;
-      mouth.current.scale.y = Math.max(0.0001, level.character * 0.018);
+    if (lantern.current) {
+      lantern.current.color.set(soulColors[state?.soup?.mood ?? "healing"]);
+      lantern.current.intensity = 3.5 + (reduced ? 0 : Math.sin(clock.elapsedTime * 2.1) * 0.4 + Math.sin(clock.elapsedTime * 6.3) * 0.12) + level.high * 16 + level.character * 3;
     }
     if (!body.current) return;
     const p = reduced || phase !== "landing" ? 0 : progress.current.value;
@@ -55,7 +58,6 @@ function Performer({ progress, onLoaded, reduced, audio, pointer, phase, voice }
   return <group ref={body}>
     <group {...placement}>
       <primitive object={model} dispose={null} />
-      <mesh ref={mouth} position={[-0.002, 0.895, 0.080]} scale={[0.015, 0.0001, 0.003]} visible={false}><sphereGeometry args={[1, 16, 10]} /><meshBasicMaterial color="#511a2b" /></mesh>
     </group>
     <pointLight ref={lantern} position={[0.03, 1.55, 0.4]} color="#FF6B00" intensity={4.5} distance={4.5} decay={2} />
   </group>;
@@ -65,8 +67,12 @@ function VoiceLighting({ voice }: Pick<Props, "voice">) {
   const ambient = useRef<AmbientLight>(null), key = useRef<DirectionalLight>(null);
   useFrame(({ gl }) => {
     const mood = voice?.current?.scene?.mood ?? "calm";
+    const soul = voice?.current?.soup;
+    // Keep the canvas mood contract coarse (calm/warm/storm); the richer
+    // soul mood is exposed separately for the soup overlay and light palette.
     gl.domElement.dataset.mood = mood;
-    const color = mood === "storm" ? "#a48bff" : mood === "warm" ? "#ffc781" : "#ffe6c7";
+    gl.domElement.dataset.soulMood = soul?.mood ?? "healing";
+    const color = soul ? soulColors[soul.mood] : mood === "storm" ? "#a48bff" : mood === "warm" ? "#ffc781" : "#ffe6c7";
     if (ambient.current) { ambient.current.color.set(color); ambient.current.intensity = mood === "storm" ? 0.45 : 0.8; }
     if (key.current) { key.current.color.set(color); key.current.intensity = mood === "warm" ? 3.5 : 2.3; }
   });
@@ -80,6 +86,9 @@ export default function TheatreScene(props: Props) {
     <directionalLight position={[-3, 2, -2]} color="#85aaa0" intensity={1.7} />
     <HalloweenRelics />
     <NetherAtmosphere intimate={props.phase !== "landing"} reduced={props.reduced} />
-    <Suspense fallback={null}>{(props.phase === "landing" || props.characterId === "meng-po") && <Performer {...props} pointer={pointer} />}</Suspense>
+    <Suspense fallback={null}>
+      {(props.phase === "landing" || props.characterId === "meng-po") && <Performer {...props} pointer={pointer} />}
+      {props.phase === "conversation" && props.characterId === "meng-po" && <group position={[-0.1, 1.3, 0]} scale={0.7}><SoulPumpkin soup={props.soup} /></group>}
+    </Suspense>
   </Canvas>;
 }

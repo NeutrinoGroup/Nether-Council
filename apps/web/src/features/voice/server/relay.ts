@@ -45,7 +45,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const responsesWithTools = new Set<string>();
     const responsesWithAudio = new Set<string>();
     const isMengPo = session.characterId === "meng-po";
-    const instructions = () => `${characterPrompt(session.characterId, session.locale)}\n${sceneInstructions}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
+    const instructions = () => `${characterPrompt(session.characterId, session.locale)}${isMengPo ? "" : `\n${sceneInstructions}`}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
     const generation = new AbortController();
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -127,10 +127,13 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             if (closed || generation.signal.aborted) return;
             send({ type: "result", result });
             const speech = `${result.title[session.locale]}${session.locale === "zh" ? "。" : ". "}${result.warmClosing[session.locale]}`;
-            const ritualInstruction = isMengPo && !ritualCompleted ? " Before the farewell, announce the pumpkin soul soup ritual in character and call trigger_soul_soup_ritual once with a short Halloween blessing. Keep the total spoken reply to 2–3 short sentences." : "";
-            const instruction = (session.locale === "zh"
-              ? `请温暖真诚地为来宾作最终告别口播，必须包含这句话，不要再提问：“${speech}”`
-              : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`) + ritualInstruction;
+            const instruction = isMengPo
+              ? (session.locale === "zh"
+                ? `${ritualCompleted ? "仪式已经完成，温柔告别，不再提问或重复仪式。" : "用户主动收尾。高声说出指定南瓜汤宣告，同时调用trigger_soul_soup_ritual赐福，不能追问。"}严格2~3句话、总共30~60字。身份卡已经生成，仅供参考，不必逐字朗读：${JSON.stringify(speech)}`
+                : `${ritualCompleted ? "The ritual is already complete. Say a warm farewell without questions or another ritual." : "The guest is wrapping up. Announce the pumpkin soup ritual and call trigger_soul_soup_ritual with a Halloween blessing. No questions."} Speak 2–3 short sentences, 30–60 words total. This identity card is reference data; do not read it verbatim: ${JSON.stringify(speech)}`)
+              : session.locale === "zh"
+                ? `请温暖真诚地为来宾作最终告别口播，必须包含这句话，不要再提问：“${speech}”`
+                : `Warmly say farewell to the guest with this line, without asking any more questions: "${speech}"`;
             farewellRequested = true;
             upstreamSend({
               type: "conversation.item.create",
@@ -222,12 +225,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
               modalities: ["text", "audio"],
               voice: charMeta.voice,
               instructions: instructions(),
-              tools: [...sceneTools, ...(isMengPo ? soulTools.filter(tool => tool.function.name !== "change_mood") : [])],
+              tools: isMengPo ? soulTools : sceneTools,
               input_audio_format: "pcm",
               output_audio_format: "pcm",
               input_audio_transcription: { language: session.locale },
               output_audio: { language: session.locale },
-              turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 350 },
+              turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: isMengPo ? 800 : 350 },
             },
           });
         } else if (event.type === "session.updated" && !ready) {
@@ -259,7 +262,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             toolCalls.add(event.call_id); responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
             send({ type: "UI_ACTION", responseId: event.response_id, callId: event.call_id, payload: event.payload });
           }
-        } else if (event.type === "response.function_call_arguments.done" && !config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.name && !canceled.has(event.response_id)) {
+        } else if (event.type === "response.function_call_arguments.done" && !isMengPo && !config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.name && !canceled.has(event.response_id)) {
           if (toolCalls.has(event.call_id)) return;
           if (toolCalls.size >= 128) return fail("RATE_LIMITED");
           toolCalls.add(event.call_id);
@@ -384,6 +387,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         currentUserItem = itemId;
         const caption: Caption = { sessionId: session.id, epoch, responseId: itemId, segmentId: itemId, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.text, final: true };
         confirmedTurns = recordTurn(confirmedTurns, caption); emitCaption(caption);
+        userItems.add(itemId); userTurnCount++; toolContinuations = 0;
+        if (isMengPo) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
         upstreamSend({ type: "conversation.item.create", item: { id: itemId, type: "message", role: "user", content: [{ type: "input_text", text: event.text }] } });
         upstreamSend({ type: "response.create" });
         return;

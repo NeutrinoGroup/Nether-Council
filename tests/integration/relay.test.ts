@@ -22,7 +22,7 @@ test("bridge keeps uploading while speaking; barge-in drops old audio and closes
   client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(raw.toString())))); await once(client, "open");
   client.send(JSON.stringify({ ...envelope(0), type: "session.start" }));
   await waitFor(() => received.some(e => e.type === "session.ready"));
-  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "server_vad", silence_duration_ms: 350 } });
+  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "server_vad", silence_duration_ms: 800 } });
   expect(upstreamMessages.find(e => e.type === "conversation.item.create")?.item).toMatchObject({ id: "opening_request", role: "user" });
   remote!.send(JSON.stringify({ type: "response.created", response: { id: "a" } }));
   remote!.send(JSON.stringify({ type: "response.audio.delta", response_id: "a", delta: Buffer.alloc(100000).toString("base64") }));
@@ -163,5 +163,81 @@ test("prewarm establishes upstream session ahead of mic activation; activating t
   client.send(JSON.stringify({ ...envelope(1), type: "session.start" }));
   await waitFor(() => received.some(e => e.type === "session.ready"));
   expect(upstreamMessages.some(e => e.type === "conversation.item.create")).toBe(true);
+  client.close();
+});
+
+test.each([false, true])("Meng Po tools stream alongside audio, validate, dedupe and reject stale rituals (gateway=%s)", async gateway => {
+  const provider = await server(), downstream = await server();
+  let remote: WebSocket | undefined;
+  const requests: Record<string, unknown>[] = [];
+  provider.on("connection", ws => { remote = ws; ws.send(JSON.stringify({ type: "session.created" })); ws.on("message", raw => { const e = JSON.parse(String(raw)); requests.push(e); if (e.type === "session.update") ws.send(JSON.stringify({ type: "session.updated" })); }); });
+  downstream.on("connection", ws => { void relayVoice(ws, session(), { realtimeKey: "fixture", realtimeUrl: url(provider), realtimeModel: "fixture", ...(gateway ? { gatewayUrl: url(provider), gatewaySecret: "fixture" } : {}) }); });
+  const client = new WebSocket(url(downstream)), received: ReturnType<typeof ServerMessage.parse>[] = [];
+  client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(String(raw)))));
+  await once(client, "open"); client.send(JSON.stringify({ ...envelope(0), type: "session.start" }));
+  await waitFor(() => received.some(e => e.type === "session.ready"));
+  expect(requests.find(e => e.type === "session.update")?.session).toMatchObject({ tools: [
+    { function: { name: "change_mood" } }, { function: { name: "extract_worry_keyword" } }, { function: { name: "trigger_soul_soup_ritual" } },
+  ] });
+  const emit = (e: object) => remote!.send(JSON.stringify(e));
+  const call = (response: string, id: string, name: string, args: unknown) => emit({ type: "response.function_call_arguments.done", response_id: response, call_id: id, name, arguments: typeof args === "string" ? args : JSON.stringify(args) });
+  emit({ type: "response.created", response: { id: "opening" } });
+  call("opening", "too-early", "trigger_soul_soup_ritual", { blessing_quote: "Not yet" });
+  emit({ type: "input_audio_buffer.speech_started", item_id: "u1" });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u1", transcript: "老板总让我改需求，气死了。" });
+  emit({ type: "response.created", response: { id: "a" } });
+  emit({ type: "response.audio.delta", response_id: "a", delta: "AAA=" });
+  call("a", "mood", "change_mood", { mood: "angry_support" });
+  call("a", "mood", "change_mood", { mood: "laughing" });
+  call("a", "invalid", "change_mood", { mood: "storm" });
+  call("a", "bad-json", "extract_worry_keyword", "{broken");
+  call("a", "long", "extract_worry_keyword", { keyword: "烦".repeat(25) });
+  call("a", "worry", "extract_worry_keyword", { keyword: "改不完的需求" });
+  emit({ type: "response.done", response: { id: "a", status: "completed" } });
+  await waitFor(() => received.some(e => e.type === "response.done"));
+  expect(received.filter(e => e.type === "soul.action")).toMatchObject([
+    { action: { name: "change_mood", arguments: { mood: "angry_support" } } },
+    { action: { name: "extract_worry_keyword", arguments: { keyword: "改不完的需求" } } },
+  ]);
+  expect(requests.filter(e => e.type === "response.create")).toHaveLength(1); // Audio + tools needs no extra speech.
+  emit({ type: "response.created", response: { id: "stale" } });
+  emit({ type: "input_audio_buffer.speech_started", item_id: "u2" });
+  call("stale", "late", "trigger_soul_soup_ritual", { blessing_quote: "迟到" });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u2", transcript: "我就是想早点下班。" });
+  emit({ type: "input_audio_buffer.speech_started", item_id: "u3" });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u3", transcript: "说完舒服多了，喝汤吧。" });
+  emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "u3", transcript: "说完舒服多了，喝汤吧。" });
+  emit({ type: "response.created", response: { id: "ritual" } });
+  call("ritual", "ritual-call", "trigger_soul_soup_ritual", { blessing_quote: "宜：下班要糖，忌：精神内耗" });
+  call("ritual", "second-ritual", "trigger_soul_soup_ritual", { blessing_quote: "重复" });
+  emit({ type: "response.done", response: { id: "ritual", status: "completed" } });
+  await waitFor(() => requests.filter(e => e.type === "response.create").length === 2);
+  expect(received.filter(e => e.type === "soul.action" && e.action.name === "trigger_soul_soup_ritual")).toHaveLength(1);
+  expect(requests.some(e => e.type === "session.update" && String((e.session as { instructions?: string }).instructions).includes("至少3次"))).toBe(true);
+  emit({ type: "response.created", response: { id: "ritual-speech" } });
+  emit({ type: "response.audio.delta", response_id: "ritual-speech", delta: "AAA=" });
+  emit({ type: "response.done", response: { id: "ritual-speech", status: "completed" } });
+  await waitFor(() => received.some(e => e.type === "response.done" && e.responseId === "ritual-speech"));
+  expect(received.some(e => e.type === "response.done" && e.responseId === "ritual")).toBe(false);
+  expect(received.some(e => e.type === "audio.delta")).toBe(true);
+  client.close();
+});
+
+test("Meng Po typed stories advance the same three-turn ritual stage", async () => {
+  const provider = await server(), downstream = await server();
+  const requests: Record<string, unknown>[] = [];
+  provider.on("connection", ws => {
+    ws.send(JSON.stringify({ type: "session.created" }));
+    ws.on("message", raw => { const event = JSON.parse(String(raw)); requests.push(event); if (event.type === "session.update") ws.send(JSON.stringify({ type: "session.updated" })); });
+  });
+  downstream.on("connection", ws => { void relayVoice(ws, session(), { realtimeKey: "fixture", realtimeUrl: url(provider), realtimeModel: "fixture" }); });
+  const client = new WebSocket(url(downstream));
+  const received: ReturnType<typeof ServerMessage.parse>[] = [];
+  client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(String(raw)))));
+  await once(client, "open"); client.send(JSON.stringify({ ...envelope(0), type: "session.start" }));
+  await waitFor(() => received.some(event => event.type === "session.ready"));
+  for (let turn = 1; turn <= 3; turn++) client.send(JSON.stringify({ ...envelope(turn), type: "text.submit", text: `第${turn}次，又要加班改需求。` }));
+  await waitFor(() => requests.some(event => event.type === "session.update" && String((event.session as { instructions?: string }).instructions).includes("至少3次")));
+  expect(received.filter(event => event.type === "caption" && event.caption.speaker === "user")).toHaveLength(3);
   client.close();
 });

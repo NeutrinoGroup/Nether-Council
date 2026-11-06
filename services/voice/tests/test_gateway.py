@@ -37,6 +37,22 @@ def test_cancelled_and_foreign_tools_never_mutate_ui():
     assert dispatcher.observe_provider({"type": "response.done", "response": {"id": "r1", "status": "completed"}})[1] == []
 
 
+def test_meng_po_registry_preserves_raw_tools_for_edge_state_machine():
+    dispatcher = ToolDispatcher(auto_continue=False)
+    dispatcher.observe_client({"type": "session.update", "session": {"tools": [
+        {"type": "function", "function": {"name": name}}
+        for name in ["change_mood", "extract_worry_keyword", "trigger_soul_soup_ritual"]
+    ]}})
+    for event in [
+        {"type": "response.created", "response": {"id": "soup"}},
+        *[{"type": "response.function_call_arguments.done", "response_id": "soup", "call_id": name, "name": name, "arguments": args}
+          for name, args in [("change_mood", '{"mood":"angry_support"}'), ("extract_worry_keyword", '{"keyword":"需求"}'), ("trigger_soul_soup_ritual", '{"blessing_quote":"宜：下班要糖"}')]],
+        {"type": "response.done", "response": {"id": "soup", "status": "completed"}},
+    ]:
+        # The Next relay owns validation, dedupe, acknowledgement and continuation.
+        assert dispatcher.observe_provider(event) == ([], [], False)
+
+
 def test_gateway_auth_fails_before_provider_connect(monkeypatch):
     monkeypatch.setenv("VOICE_GATEWAY_SECRET", "s" * 32)
     with TestClient(app) as client:

@@ -2,16 +2,17 @@
 import { Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei/core/Gltf";
-import { Box3, MathUtils, type Group, type Mesh } from "three";
+import { Box3, MathUtils, type Group } from "three";
+import { getCharacter } from "@nether/party-core";
 import { SoulPumpkin } from "./SoulPumpkin";
 import type { SceneStats, StageProps } from "./CharacterStage";
-const modelUrl = "/models/meng-po.glb";
+const modelUrl = getCharacter("meng-po").modelUrl!;
 type Props = StageProps & { onLoaded: () => void; onFrame: (stats: SceneStats) => void; fallback: ReactNode };
 function Model({ phase, interruptedAt, celebrating: hostCelebrating, scene: sceneState, soup, readRms, onLoaded, onFrame }: Props) {
   const celebrating = hostCelebrating || Boolean(sceneState?.blessing);
   const { scene: cachedScene } = useGLTF(modelUrl);
   const scene = useMemo(() => cachedScene.clone(true), [cachedScene]);
-  const body = useRef<Group>(null); const mouth = useRef<Mesh>(null);
+  const body = useRef<Group>(null);
   const reduced = useRef(false);
   const timing = useRef({ last: 0, started: 0, frames: 0 });
   const placement = useMemo(() => {
@@ -33,10 +34,6 @@ function Model({ phase, interruptedAt, celebrating: hostCelebrating, scene: scen
     const interrupted = interruptedAt !== undefined && performance.now() - interruptedAt < 400;
     const state = interrupted ? "listening" : celebrating ? "celebrating" : phase === "speaking" ? "speaking" : phase === "listening" ? "listening" : "idle";
     onFrame({ motion: state, mouthLevel: level, ...performanceStats });
-    if (mouth.current) {
-      mouth.current.visible = level > 0.015;
-      mouth.current.scale.set(0.015, Math.max(0.0001, level * 0.016), 0.003);
-    }
     if (now - t.last < 1 / 30) return;
     t.last = now;
     if (body.current) {
@@ -49,8 +46,7 @@ function Model({ phase, interruptedAt, celebrating: hostCelebrating, scene: scen
   });
   return <group ref={body}><group scale={placement.scale} position={placement.position}>
     <primitive object={scene} dispose={null} />
-    {/* Source GLB is a single baked mesh without a face rig. This independent mouth never stretches the body. */}
-    <mesh ref={mouth} position={[-0.002, 0.895, 0.080]} visible={false}><sphereGeometry args={[1, 16, 10]} /><meshBasicMaterial color="#511a2b" /></mesh>
+
   </group></group>;
 }
 export default function MengPoScene(props: Props) {

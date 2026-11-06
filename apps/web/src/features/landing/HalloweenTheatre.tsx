@@ -49,12 +49,13 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
   const [phase, setPhase] = useState<EncounterPhase>("landing");
   const audio = useRef(silentLevels());
   const voice = useRef<VoiceView | undefined>(undefined);
-  const onView = useCallback((view: VoiceView) => { voice.current = view; }, []);
+  const [soup, setSoup] = useState<VoiceView["soup"]>();
+  const onView = useCallback((view: VoiceView) => { voice.current = view; setSoup(view.soup); }, []);
   const entry = useRef<HTMLButtonElement>(null);
   const arrive = useCallback(() => setPhase(current => current === "entering" ? "conversation" : current), []);
   const [performing, setPerforming] = useState<CharacterId>("meng-po");
   const enter = (id: CharacterId = "meng-po") => { setPerforming(id); window.scrollTo({ top: 0, behavior: "instant" }); setPhase("entering"); };
-  const close = () => { voice.current = undefined; Object.assign(audio.current, silentLevels()); setPhase("landing"); requestAnimationFrame(() => entry.current?.focus()); };
+  const close = () => { voice.current = undefined; setSoup(undefined); Object.assign(audio.current, silentLevels()); setPhase("landing"); requestAnimationFrame(() => entry.current?.focus()); };
   const progress = useRef({ value: 0 });
   const reduced = useReducedMotion();
   const [loaded, setLoaded] = useState(false);
@@ -103,7 +104,7 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
     return () => { media.revert(); progress.current.value = 0; };
   }, { scope: root, dependencies: [locale], revertOnUpdate: true });
 
-  const poster = <div className="theatre-poster"><Image src="/posters/meng-po.png" width={500} height={500} priority alt={locale === "zh" ? "孟婆抱着南瓜忘忧汤" : "Meng Po holding her pumpkin brew"} unoptimized /></div>;
+  const poster = <div className="theatre-poster"><Image src={getCharacter("meng-po").posterUrl} width={500} height={500} priority alt={locale === "zh" ? "孟婆抱着南瓜忘忧汤" : "Meng Po holding her pumpkin brew"} unoptimized /></div>;
 
   return (
     <main ref={root} className="theatre" data-phase={phase} lang={locale === "zh" ? "zh-CN" : "en"}>
@@ -118,7 +119,7 @@ export function HalloweenTheatre({ initialLocale, query }: { initialLocale: Loca
       </header>
       <div ref={stage} className="theatre-stage" data-model-loaded={loaded} aria-label={t.model} role="img">
         {performing !== "meng-po" && phase !== "landing" ? <div className="theatre-poster alternate-performer"><Image src={getCharacter(performing).posterUrl} width={500} height={500} alt={getCharacter(performing).name[locale]} unoptimized /></div> : !loaded && poster}
-        <StageBoundary onFailure={onFailure}><Scene progress={progress} onLoaded={onLoaded} paused={paused} reduced={Boolean(reduced)} phase={phase} characterId={performing} onArrive={arrive} audio={audio} voice={voice} /></StageBoundary>
+        <StageBoundary onFailure={onFailure}><Scene progress={progress} onLoaded={onLoaded} paused={paused} reduced={Boolean(reduced)} phase={phase} characterId={performing} onArrive={arrive} audio={audio} voice={voice} soup={soup} /></StageBoundary>
         <span className="theatre-model-state" aria-live="polite">{failed ? t.fallback : loaded ? t.model : t.loading}</span>
       </div>
       <div className="theatre-vignette" aria-hidden="true" />

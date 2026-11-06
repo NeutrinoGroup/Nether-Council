@@ -11,6 +11,7 @@ import { LettingGoRitual } from "../ritual/LettingGoRitual";
 import { errorText, words } from "./words";
 import { VoiceTextInput } from "./VoiceTextInput";
 import { InAppBrowserBanner } from "./InAppBrowserBanner";
+import { SoulSoupOverlay } from "../world3d/SoulSoupOverlay";
 
 export function ImmersiveEncounter({ view, locale, invite, characterId, client, audio, start, hydrated, generatingVerdict, verdictError, claimVerdict, onClose }: {
   view: VoiceView; locale: Locale; invite: string; characterId: CharacterId; client: MutableRefObject<VoiceClient | null>;
@@ -29,7 +30,10 @@ export function ImmersiveEncounter({ view, locale, invite, characterId, client, 
       {view.scene?.blessing && <p className="ritual-blessing" role="status">{view.scene.blessing}</p>}
       <TheatreCaptions caption={view.caption} userCaption={view.userCaption} locale={locale} reduced={reduced} />
       {view.result ? <LettingGoRitual key={view.result.id} result={view.result} draft={view.draft} locale={locale} invite={invite} reduced={reduced} /> : <>
-        <SoupAltar audio={audio} reduced={reduced} />
+        <div className="immersive-soul-altar">
+          <SoupAltar audio={audio} reduced={reduced} soup={view.soup} />
+          {characterId === "meng-po" && <SoulSoupOverlay soup={view.soup} locale={locale} />}
+        </div>
         <p className="soup-description">{locale === "zh" ? "把烦恼说出来，注入这一碗。" : "Pour your story into the brew."}</p>
       </>}
       <div className="encounter-glass">

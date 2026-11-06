@@ -4,11 +4,12 @@ import { useFrame } from "@react-three/fiber";
 import type { Group } from "three";
 import type { SoulSoupView } from "../voice/client";
 
-export const soulColors = { healing: "#f3a45b", angry_support: "#b06bff", laughing: "#ffd46a", mystical: "#a6ead8" };
+import { soulColors } from "./soul-colors";
 
 export function SoulPumpkin({ soup }: { soup?: SoulSoupView }) {
   const bowl = useRef<Group>(null);
   const ashes = useRef<Group>(null);
+  const flames = useRef<Group>(null);
   const started = useRef<number | undefined>(undefined);
   const reduced = useRef(false);
   const color = soulColors[soup?.mood ?? "healing"];
@@ -23,7 +24,7 @@ export function SoulPumpkin({ soup }: { soup?: SoulSoupView }) {
     const elapsed = started.current === undefined ? 0 : (performance.now() - started.current) / 1000;
     const drinking = soup?.ritual && !reduced.current ? Math.sin(Math.min(1, elapsed / 2.4) * Math.PI) : 0;
     if (bowl.current) {
-      bowl.current.position.y = 0.26 + Number(drinking) * 0.65;
+      bowl.current.position.y = 0.5 + Number(drinking) * 0.65;
       bowl.current.rotation.x = Number(drinking) * 0.55;
     }
     if (ashes.current) {
@@ -32,9 +33,10 @@ export function SoulPumpkin({ soup }: { soup?: SoulSoupView }) {
       ashes.current.rotation.y = clock.elapsedTime * 0.6;
       ashes.current.scale.setScalar(0.4 + elapsed * 0.3);
     }
+    if (flames.current) flames.current.scale.y = reduced.current ? 1 : 1 + Math.sin(clock.elapsedTime * 7) * 0.12;
   });
-  return <group position={[0, 0, 0.85]} scale={0.72}>
-    <group ref={bowl} position={[0, 0.26, 0]}>
+  return <group position={[0, 0.22, 1.05]} scale={0.95}>
+    <group ref={bowl} position={[0, 0.5, 0]}>
       {Array.from({ length: 8 }, (_, i) => {
         const angle = i / 8 * Math.PI * 2;
         return <mesh key={i} position={[Math.cos(angle) * 0.23, 0, Math.sin(angle) * 0.23]} scale={[0.28, 0.31, 0.28]}>
@@ -46,6 +48,12 @@ export function SoulPumpkin({ soup }: { soup?: SoulSoupView }) {
       {[-1, 1].map(side => <mesh key={side} position={[side * 0.17, 0.04, 0.46]} rotation={[0, 0, side * -0.16]}><circleGeometry args={[0.075, 3]} /><meshBasicMaterial color={color} /></mesh>)}
       <mesh position={[0, -0.12, 0.48]} scale={[1, 0.28, 1]} rotation={[0, 0, Math.PI]}><circleGeometry args={[0.18, 3]} /><meshBasicMaterial color={color} /></mesh>
       <pointLight color={color} intensity={2.4} distance={3} />
+      <group ref={flames} visible={soup?.mood === "angry_support"}>
+        {[-1, 0, 1].map(side => <mesh key={side} position={[side * 0.17, 0.42, 0]} rotation={[0, 0, side * -0.18]}>
+          <coneGeometry args={[0.075, side === 0 ? 0.4 : 0.27, 10]} />
+          <meshBasicMaterial color={color} transparent opacity={0.75} depthWrite={false} />
+        </mesh>)}
+      </group>
     </group>
     <group ref={ashes} visible={false}>
       {Array.from({ length: 28 }, (_, i) => <mesh key={i} position={[Math.sin(i * 2.4) * 0.55, (i % 7) * 0.1, Math.cos(i * 2.4) * 0.45]}><sphereGeometry args={[0.013, 4, 4]} /><meshBasicMaterial color={color} /></mesh>)}

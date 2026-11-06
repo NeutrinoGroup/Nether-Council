@@ -24,7 +24,7 @@ test("same-page threshold preserves admission and waits for an explicit micropho
 });
 
 test("failed GLB keeps the same-page encounter accessible", async ({ page }) => {
-  await page.route("**/models/meng-po.glb", route => route.fulfill({ status: 503, body: "Unavailable" }));
+  await page.route("**/models/meng-po.glb*", route => route.fulfill({ status: 503, body: "Unavailable" }));
   await page.goto("/?lang=en");
   await expect(page.getByText("3D is unavailable. Your voice encounter is still ready.")).toBeAttached({ timeout: 20000 });
   await expect(page.getByAltText("Meng Po holding her pumpkin brew")).toBeVisible();

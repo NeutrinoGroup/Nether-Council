@@ -1,13 +1,16 @@
 "use client";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { AudioLevels } from "./useAudioReactive";
+import type { SoulSoupView } from "./client";
+import { soulColors } from "../world3d/soul-colors";
 
-export function SoupAltar({ audio, reduced }: { audio: MutableRefObject<AudioLevels>; reduced: boolean }) {
+export function SoupAltar({ audio, reduced, soup }: { audio: MutableRefObject<AudioLevels>; reduced: boolean; soup?: SoulSoupView }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const element = canvas.current, ctx = element?.getContext("2d");
     if (!element || !ctx) return;
     let frame = 0;
+    const color = soulColors[soup?.mood ?? "healing"];
     const draw = (time: number) => {
       const dpr = Math.min(devicePixelRatio, 2), w = element.clientWidth, h = element.clientHeight;
       if (element.width !== w * dpr || element.height !== h * dpr) { element.width = w * dpr; element.height = h * dpr; }
@@ -24,7 +27,7 @@ export function SoupAltar({ audio, reduced }: { audio: MutableRefObject<AudioLev
           if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
           else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
         }
-        ctx.strokeStyle = `rgba(246,161,93,${0.65 - ring * 0.075})`; ctx.lineWidth = 1.6; ctx.stroke();
+        ctx.globalAlpha = 0.65 - ring * 0.075; ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke();
       }
       ctx.restore();
       // A pumpkin bowl silhouette below the liquid, with a ceremonial foot.
@@ -36,6 +39,6 @@ export function SoupAltar({ audio, reduced }: { audio: MutableRefObject<AudioLev
     const visibility = () => { cancelAnimationFrame(frame); if (!document.hidden) frame = requestAnimationFrame(draw); };
     document.addEventListener("visibilitychange", visibility); frame = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(frame); document.removeEventListener("visibilitychange", visibility); };
-  }, [audio, reduced]);
+  }, [audio, reduced, soup?.mood]);
   return <canvas ref={canvas} className="soup-altar" aria-hidden="true" />;
 }
