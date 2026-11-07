@@ -22,7 +22,7 @@ test("bridge keeps uploading while speaking; barge-in drops old audio and closes
   client.on("message", raw => received.push(ServerMessage.parse(JSON.parse(raw.toString())))); await once(client, "open");
   client.send(JSON.stringify({ ...envelope(0), type: "session.start" }));
   await waitFor(() => received.some(e => e.type === "session.ready"));
-  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "server_vad", silence_duration_ms: 800 } });
+  expect(upstreamMessages.find(e => e.type === "session.update")?.session).toMatchObject({ input_audio_format: "pcm", voice: "longanqian_v3.1", turn_detection: { type: "server_vad", silence_duration_ms: 520 } });
   expect(upstreamMessages.find(e => e.type === "conversation.item.create")?.item).toMatchObject({ id: "opening_request", role: "user" });
   remote!.send(JSON.stringify({ type: "response.created", response: { id: "a" } }));
   remote!.send(JSON.stringify({ type: "response.audio.delta", response_id: "a", delta: Buffer.alloc(100000).toString("base64") }));

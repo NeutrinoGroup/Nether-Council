@@ -49,3 +49,5 @@ export function updateCaption(previous: Caption | undefined, incoming: Caption, 
   if (previous && previous.segmentId === incoming.segmentId && previous.revision >= incoming.revision) return previous;
   return incoming;
 }
+
+export { PcmResampler, PcmFrameBuffer, pcm16le, encodePcmBase64, decodePcm16Base64ToFloat32 } from "./audio";

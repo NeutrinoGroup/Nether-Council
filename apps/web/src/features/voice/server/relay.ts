@@ -2,7 +2,7 @@ import { parseTool, sceneTools, sceneInstructions } from "./tools";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
-import { UiAction, parseClientMessage, type Caption, type ConfirmedTurn, type Session, type ServerMessage, type ServerTurnTiming } from "@nether/contracts";
+import { UiAction, parseClientMessage, type CharacterId, type Locale, type Caption, type ConfirmedTurn, type Session, type ServerMessage, type ServerTurnTiming } from "@nether/contracts";
 import { recordTurn, encounterProgress, getCharacter } from "@nether/party-core";
 import { characterPrompt, openingPrompt } from "./prompt";
 import { parseSoulCall, soulStageInstruction, soulTools } from "./soul-tools";
@@ -28,6 +28,13 @@ const Upstream = z.looseObject({
 type Config = { gatewayUrl?: string; gatewaySecret?: string; realtimeKey: string; realtimeUrl: string; realtimeModel: string; text?: TextConfig };
 type Outgoing = ServerMessage extends infer T ? T extends ServerMessage ? Omit<T, "protocolVersion" | "eventId" | "sessionId" | "epoch" | "seq"> : never : never;
 
+export function getVadConfig(characterId: CharacterId, locale: Locale) {
+  void locale; // Both supported languages share the same balanced timing profile.
+  return { type: "server_vad" as const, threshold: 0.5, prefix_padding_ms: characterId === "meng-po" ? 240 : 200, silence_duration_ms: characterId === "meng-po" ? 520 : 340 };
+}
+
+const responseScopedEvents = new Set(["response.audio.delta", "response.audio_transcript.delta", "response.function_call_arguments.done", "UI_ACTION", "gateway.tool_result"]);
+
 export function relayVoice(client: WebSocket, session: Session, config: Config): Promise<void> {
   return new Promise(resolve => {
     let upstream: WebSocket | undefined, closed = false, started = false, ready = false, upstreamReady = false;
@@ -45,6 +52,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let finalizing = false;
     let farewellRequested = false;
     let resumeTurnsState: { role: "user" | "assistant"; text: string }[] = [];
+    let lastSentInstructions = "";
     let userTurnCount = 0, ritualCompleted = false, toolContinuations = 0;
     const userItems = new Set<string>();
     const toolCalls = new Set<string>();
@@ -71,6 +79,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const translations = new TranslationQueue(config.text?.key ? createTranslator(config.text) : undefined, translation => send({ type: "caption.translation", translation }));
     const emitCaption = (caption: Caption) => { send({ type: "caption", caption }); translations.observe(caption); };
     const upstreamSend = (event: object) => { if (upstream?.readyState === WebSocket.OPEN) upstream.send(JSON.stringify(event)); };
+    const syncInstructions = () => {
+      const next = instructions();
+      if (next === lastSentInstructions || upstream?.readyState !== WebSocket.OPEN) return;
+      upstreamSend({ type: "session.update", session: { instructions: next } });
+      lastSentInstructions = next;
+    };
     const cancel = () => { if (activeResponse) { canceled.add(activeResponse); translations.invalidate("character"); activeResponse = undefined; pendingCancelErrors++; upstreamSend({ type: "response.cancel" }); } };
 
     function shutdown(code = 1000, reason = "Session ended") {
@@ -190,7 +204,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       ready = true;
       readyAt = Date.now();
       send({ type: "session.ready", session, timing: { handshakeMs: handshakeMs ?? elapsed(upstreamOpenStartedAt) } });
-      if (isMengPo && resumeTurnsState.length) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+      syncInstructions();
       upstreamSend({
         type: "conversation.item.create",
         item: {
@@ -223,22 +237,28 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       upstream.on("message", data => {
         if (closed) return;
         let event: z.infer<typeof Upstream>;
-        try { event = Upstream.parse(JSON.parse(data.toString())); } catch { diagnostic("invalid_event"); return fail("UPSTREAM_UNAVAILABLE"); }
+        try {
+          const incoming = JSON.parse(data.toString());
+          // Reject stale ownership before validating or decoding payloads on the hot path.
+          if (incoming && responseScopedEvents.has(incoming.type) && (typeof incoming.response_id !== "string" || canceled.has(incoming.response_id) || incoming.response_id !== activeResponse)) return;
+          event = Upstream.parse(incoming);
+        } catch { diagnostic("invalid_event"); return fail("UPSTREAM_UNAVAILABLE"); }
 
         if (event.type === "session.created") {
+          lastSentInstructions = instructions();
           const charMeta = getCharacter(session.characterId);
           upstreamSend({
             type: "session.update",
             session: {
               modalities: ["text", "audio"],
               voice: charMeta.voice,
-              instructions: instructions(),
+              instructions: lastSentInstructions,
               tools: isMengPo ? soulTools : sceneTools,
               input_audio_format: "pcm",
               output_audio_format: "pcm",
               input_audio_transcription: { language: session.locale },
               output_audio: { language: session.locale },
-              turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: isMengPo ? 800 : 350 },
+              turn_detection: getVadConfig(session.characterId, session.locale),
             },
           });
         } else if (event.type === "session.updated" && !ready) {
@@ -329,7 +349,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           confirmedTurns = recordTurn(confirmedTurns, userCaption);
           if (!userItems.has(event.item_id) && event.transcript.trim()) {
             userItems.add(event.item_id); userTurnCount++; toolContinuations = 0;
-            if (isMengPo) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+            if (isMengPo) syncInstructions();
           }
           emitCaption(userCaption);
         } else if (event.type === "response.done" && event.response && !canceled.has(event.response.id) && event.response.id === activeResponse) {
@@ -347,7 +367,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           if (activeResponse === event.response.id) activeResponse = undefined;
           if (continueSpeech) {
             toolContinuations++;
-            upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+            syncInstructions();
             continuationStartedAt = performance.now();
             upstreamSend({ type: "response.create" });
           } else {
@@ -422,7 +442,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         const caption: Caption = { sessionId: session.id, epoch, responseId: itemId, segmentId: itemId, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.text, final: true };
         confirmedTurns = recordTurn(confirmedTurns, caption); emitCaption(caption);
         userItems.add(itemId); userTurnCount++; toolContinuations = 0;
-        if (isMengPo) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+        if (isMengPo) syncInstructions();
         upstreamSend({ type: "conversation.item.create", item: { id: itemId, type: "message", role: "user", content: [{ type: "input_text", text: event.text }] } });
         upstreamSend({ type: "response.create" });
         return;

@@ -71,13 +71,17 @@ class ToolDispatcher:
 
     def observe_provider(self, event: dict) -> tuple[list[dict], list[dict], bool]:
         """Returns downstream events, upstream acknowledgements, and consumption flag."""
-        if self.soul_mode:
-            return [], [], False
         kind = event.get("type")
+        if kind in {"response.audio.delta", "response.audio_transcript.delta"} and event.get("response_id") in self.canceled:
+            return [], [], True
         if kind == "response.created":
             self.active = event.get("response", {}).get("id")
         elif kind == "input_audio_buffer.speech_started":
             self.observe_client({"type": "response.cancel"})
+        elif self.soul_mode:
+            if kind == "response.done" and event.get("response", {}).get("id") == self.active:
+                self.active = None
+            return [], [], False
         elif kind == "response.function_call_arguments.done" and event.get("name") in {"change_mood", "extract_worry", "finish_ritual"}:
             rid, cid = event.get("response_id"), event.get("call_id")
             if rid != self.active or rid in self.canceled or not isinstance(cid, str) or not 0 < len(cid) <= 160 or cid in self.calls:
