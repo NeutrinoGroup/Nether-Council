@@ -90,9 +90,11 @@
 .cast-pagination-dots {
   display: flex;
   align-items: center;
+  gap: 2px;
   margin-right: 12px;
 }
 .theatre .cast-dot {
+  position: relative;
   display: grid;
   place-items: center;
   width: 24px;
@@ -104,19 +106,37 @@
   background: transparent;
   cursor: pointer;
 }
+.cast-dot::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 2px;
+  background: var(--seam);
+  transition: background-color .2s ease-out;
+}
+.cast-dot:hover::before { background: var(--ash); }
+.theatre .cast-dot:hover { background: transparent; color: inherit; }
+.cast-dot.is-active::before {
+  background: rgba(246, 161, 93, 0.25);
+}
 .cast-dot::after {
   content: "";
+  position: absolute;
   width: 16px;
-  height: 3px;
-  background: var(--ash);
-  transform: scaleX(.5);
-  transition: transform .25s ease-out, background-color .25s ease-out;
+  height: 2px;
+  background: transparent;
+  transform-origin: left center;
 }
-.cast-dot:hover::after { background: var(--bone); }
-.theatre .cast-dot:hover { background: transparent; color: inherit; }
 .cast-dot.is-active::after {
   background: var(--ember);
-  transform: scaleX(1);
+  animation: cast-dot-progress 3.5s linear infinite;
+}
+.cast-carousel.is-paused .cast-dot.is-active::after {
+  animation-play-state: paused;
+}
+@keyframes cast-dot-progress {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
 }
 .theatre .cast-dot:focus-visible {
   outline: 2px solid var(--ember);
@@ -174,11 +194,15 @@
   border-bottom: 1px solid var(--seam);
   border-radius: 0;
   user-select: none;
-  transition: border-color .25s ease-out;
+  opacity: 0.74;
+  transition: opacity .3s ease-out, border-color .25s ease-out;
 }
 .cast-performer:hover,
 .cast-performer:focus-visible,
-.cast-performer.is-active { border-bottom-color: var(--ember); }
+.cast-performer.is-active {
+  opacity: 1;
+  border-bottom-color: var(--ember);
+}
 .theatre .cast-performer:focus-visible { outline-offset: -2px; }
 .cast-effigy {
   aspect-ratio: 4 / 5;
@@ -253,6 +277,8 @@
   }
   .cast-pagination-dots { grid-column: 1 / -1; justify-content: space-between; margin: 0; }
   .theatre .cast-dot { width: 44px; max-width: 14.285%; flex: 1; }
+  .theatre .cast-dot::before,
+  .theatre .cast-dot::after { width: min(22px, 80%); }
   .cast-position { margin: 0; }
   .cast-performer { flex-basis: min(78vw, 340px); }
 }
@@ -261,6 +287,7 @@
   .cast-dot::after, .theatre .cast-arrow { transition: none; }
   .cast-performer:hover img, .cast-performer:focus-visible img,
   .cast-performer:hover .cast-invitation svg, .cast-performer:focus-visible .cast-invitation svg { transform: none; }
+  .cast-dot.is-active::after { animation: none; transform: scaleX(1); }
 }
 .theatre-stage .alternate-performer{top:7%;bottom:5%;left:43%;right:9%}.immersive-encounter button{border-radius:0}.immersive-encounter .encounter-glass{border-radius:14px}
 @media(max-width:700px){.theatre-stage .alternate-performer{top:10%;bottom:30%;left:10%;right:10%}}

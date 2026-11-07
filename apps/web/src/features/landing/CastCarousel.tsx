@@ -46,8 +46,7 @@ export function CastCarousel({
   const reelId = useId();
   const [current, setCurrent] = useState(0);
   const [autoplayEnabled, setAutoplayEnabled] = useState(true);
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const zh = locale === "zh";
 
   useGSAP(() => {
@@ -58,9 +57,16 @@ export function CastCarousel({
     const cards = Array.from(element.children) as HTMLElement[];
     const setters = cards.map((card) => gsap.quickSetter(card, "x", "px"));
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const paused = new Set<PauseReason>(["viewport"]);
+    const inView = Boolean(
+      element &&
+      element.getBoundingClientRect().bottom > 0 &&
+      element.getBoundingClientRect().top < window.innerHeight
+    );
+    const paused = new Set<PauseReason>();
+    if (!inView) paused.add("viewport");
     if (window.matchMedia("(hover: hover)").matches && container.matches(":hover")) paused.add("hover");
     if (container.contains(document.activeElement)) paused.add("focus");
+    setPlaying(paused.size === 0);
     const position = { value: 0 };
     let target = 0;
     let step = 0;
@@ -113,14 +119,12 @@ export function CastCarousel({
         }
         schedule();
       };
-      if (media.matches) {
-        finish();
-        return;
-      }
+      const duration = media.matches ? 0.35 : TRANSITION_DURATION;
+      const ease = media.matches ? "power1.out" : "power3.inOut";
       tween = gsap.to(position, {
         value: destination,
-        duration: TRANSITION_DURATION,
-        ease: "power3.inOut",
+        duration,
+        ease,
         onUpdate: render,
         onComplete: finish,
       });
@@ -158,6 +162,9 @@ export function CastCarousel({
         enabled = !enabled;
         setAutoplayEnabled(enabled);
         pause("manual", !enabled);
+        if (enabled && paused.size === 0) {
+          animateTo(target + 1, true);
+        }
       },
     };
 
@@ -169,17 +176,20 @@ export function CastCarousel({
     resizeObserver.observe(element);
     resizeObserver.observe(cards[0]);
     measure();
+    if (paused.size === 0) {
+      schedule();
+    }
 
-    const viewObserver = new IntersectionObserver(([entry]) => pause("viewport", !entry?.isIntersecting));
+    const viewObserver = new IntersectionObserver(
+      ([entry]) => pause("viewport", !entry?.isIntersecting),
+      { rootMargin: "100px" }
+    );
     viewObserver.observe(element);
     const onVisibility = () => pause("document", document.hidden);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
 
     const onMotionChange = () => {
-      setReducedMotion(media.matches);
-      pause("motion", media.matches);
-      // Finish at the selected card when the preference changes, preserving the selection.
       if (media.matches && tween) animateTo(target);
     };
     media.addEventListener("change", onMotionChange);
@@ -280,7 +290,7 @@ export function CastCarousel({
   return (
     <div
       ref={root}
-      className="cast-carousel"
+      className={`cast-carousel${!playing || !autoplayEnabled ? " is-paused" : ""}`}
       onKeyDown={handleKeyDown}
       onPointerEnter={(event) => {
         if (event.pointerType !== "touch") controls.current?.pause("hover", true);
@@ -323,14 +333,27 @@ export function CastCarousel({
             className="cast-arrow"
             type="button"
             aria-controls={reelId}
-            disabled={reducedMotion}
-            aria-label={reducedMotion
-              ? zh ? "已减少动态效果，自动播放关闭" : "Autoplay off for reduced motion"
-              : autoplayEnabled ? zh ? "暂停自动播放" : "Pause autoplay" : zh ? "开启自动播放" : "Start autoplay"}
+            aria-label={
+              autoplayEnabled
+                ? zh ? "暂停自动播放" : "Pause autoplay"
+                : zh ? "开启自动播放" : "Start autoplay"
+            }
+            title={
+              autoplayEnabled
+                ? zh ? "暂停自动播放" : "Pause autoplay"
+                : zh ? "开启自动播放" : "Start autoplay"
+            }
             onClick={() => controls.current?.toggleAutoplay()}
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path d={autoplayEnabled && !reducedMotion ? "M7 4v12M13 4v12" : "m7 4 9 6-9 6Z"} stroke="currentColor" strokeWidth="1.5" />
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              {autoplayEnabled ? (
+                <>
+                  <rect x="6" y="4.5" width="2.5" height="11" />
+                  <rect x="11.5" y="4.5" width="2.5" height="11" />
+                </>
+              ) : (
+                <path d="M7 4.5v11l9-5.5-9-5.5Z" />
+              )}
             </svg>
           </button>
           <button className="cast-arrow" type="button" aria-controls={reelId} onClick={() => controls.current?.move(-1)} aria-label={zh ? "上一位角色" : "Previous character"}>
