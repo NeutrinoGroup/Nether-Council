@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IdentityResult, Locale } from "@nether/contracts";
 import { normalizeNickname } from "@nether/party-core";
-import { exportCardPngBlob, renderCardToCanvas } from "./canvas";
+import { exportCardPngBlob, renderCardToCanvas, type CardRenderOptions } from "./canvas";
 
 export interface IdentityCardProps {
   result: IdentityResult;
@@ -24,7 +24,13 @@ export function IdentityCard({
   const [hideVerdict, setHideVerdict] = useState<boolean>(false);
   const [shareUrl, setShareUrl] = useState<string>("");
   const [rendering, setRendering] = useState<boolean>(true);
+  const [renderError, setRenderError] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [prepared, setPrepared] = useState<{ options: CardRenderOptions; blob: Blob }>();
   const [copiedKind, setCopiedKind] = useState<"text" | "link" | null>(null);
+
+  const options = useMemo(() => ({ result, nickname, hideVerdict, locale, shareUrl }), [result, nickname, hideVerdict, locale, shareUrl]);
+  const canDownload = prepared?.options === options && !renderError;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderedOnce = useRef<boolean>(false);
@@ -63,47 +69,57 @@ export function IdentityCard({
     if (!canvasRef.current || !shareUrl) return;
     let active = true;
     setRendering(true);
+    setRenderError(false);
 
     void (async () => {
       try {
-        await renderCardToCanvas(canvasRef.current!, {
-          result,
-          nickname,
-          hideVerdict,
-          locale,
-          shareUrl,
-        });
-        if (active) {
+        // An obsolete render may finish loading fonts or QR pixels after edits.
+        // Only a completed current snapshot can publish pixels to the preview.
+        const snapshot = document.createElement("canvas");
+        await renderCardToCanvas(snapshot, options);
+        if (!active) return;
+        const blob = await exportCardPngBlob(snapshot);
+        if (active && canvasRef.current) {
+          const preview = canvasRef.current;
+          const context = preview.getContext("2d");
+          if (!context) throw new Error("CANVAS_CONTEXT_UNAVAILABLE");
+          preview.width = snapshot.width;
+          preview.height = snapshot.height;
+          context.drawImage(snapshot, 0, 0);
+          setPrepared({ options, blob });
           setRendering(false);
           if (!renderedOnce.current) {
             renderedOnce.current = true;
             void emitTelemetry("card_rendered", result.sessionId);
           }
         }
-      } catch (err) {
-        console.error("Card rendering error:", err);
+      } catch {
+        if (active) { setRendering(false); setRenderError(true); }
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [result, nickname, hideVerdict, locale, shareUrl]);
+  }, [options, result.sessionId, shareUrl, retry]);
 
-  const handleDownload = async () => {
-    if (!canvasRef.current) return;
+  const handleDownload = () => {
+    if (!canDownload || !prepared) return;
     void emitTelemetry("card_download_clicked", result.sessionId);
     try {
-      const blob = await exportCardPngBlob(canvasRef.current);
-      void emitTelemetry("card_download_created", result.sessionId);
-      const url = URL.createObjectURL(blob);
+      // Encoding is already complete, so the download stays in the click gesture.
+      const url = URL.createObjectURL(prepared.blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = `nether-identity-${result.sessionId.slice(0, 8)}.png`;
+      link.style.display = "none";
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+      void emitTelemetry("card_download_created", result.sessionId);
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      console.error("Failed to export card PNG:", err);
+    } catch {
+      setRenderError(true);
     }
   };
 
@@ -153,9 +169,15 @@ export function IdentityCard({
         <canvas
           ref={canvasRef}
           className="identity-card-canvas"
+          aria-busy={!canDownload}
+          hidden={!canDownload}
           style={{ width: "100%", maxWidth: "420px", height: "auto", aspectRatio: "3 / 4", borderRadius: "12px", border: "1px solid var(--line)" }}
         />
         {rendering && <div className="card-rendering-indicator">{locale === "zh" ? "正在绘制身份卡…" : "Rendering card…"}</div>}
+        {renderError && <div role="alert">
+          <p>{locale === "zh" ? "身份卡绘制失败，请重试。" : "The card could not be prepared. Please retry."}</p>
+          <button onClick={() => setRetry(value => value + 1)}>{locale === "zh" ? "重新绘制身份卡" : "Render card again"}</button>
+        </div>}
       </div>
 
       <div className="card-controls">
@@ -209,17 +231,17 @@ export function IdentityCard({
         </div>
 
         <div className="card-actions">
-          <button className="primary-action-btn" onClick={handleDownload}>
+          <button className="primary-action-btn" disabled={!canDownload} onClick={handleDownload}>
             {locale === "zh" ? "下载身份卡 PNG" : "Download Card PNG"}
           </button>
-          <button className="secondary-action-btn" onClick={handleCopyText}>
+          <button className="secondary-action-btn" disabled={!shareUrl} onClick={handleCopyText}>
             {copiedKind === "text" ? (locale === "zh" ? "文案已复制 ✓" : "Copied ✓") : (locale === "zh" ? "复制分享文案" : "Copy share text")}
           </button>
-          <button className="secondary-action-btn" onClick={handleCopyLink}>
+          <button className="secondary-action-btn" disabled={!shareUrl} onClick={handleCopyLink}>
             {copiedKind === "link" ? (locale === "zh" ? "链接已复制 ✓" : "Copied ✓") : (locale === "zh" ? "复制邀请链接" : "Copy invite link")}
           </button>
           {canSystemShare && (
-            <button className="secondary-action-btn" onClick={handleSystemShare}>
+            <button className="secondary-action-btn" disabled={!shareUrl} onClick={handleSystemShare}>
               {locale === "zh" ? "分享到…" : "Share via…"}
             </button>
           )}
