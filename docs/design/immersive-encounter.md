@@ -48,13 +48,13 @@ MediaStream → inputAnalyser （仅观测，不连接扬声器）
 Qwen PCM → 现有播放节点 → outputAnalyser → destination
 ```
 
-钩子通过 getter 读取当前客户端的节点，避免重启时持有旧音频图。使用时域 RMS 衡量响度、按 AudioContext 真实采样率取 2–8 kHz 能量。FFT 缓冲按节点复用；指数 attack/release 平滑；ref 更新不触发 React 每帧渲染。静音、打断、停止、卸载后没有模拟活动。输入能量驱动汤盅，输出能量驱动独立嘴部替代网格、点头与南瓜光源。
+钩子通过 getter 读取当前客户端的节点，避免重启时持有旧音频图。使用时域 RMS 衡量响度、按 AudioContext 真实采样率取 2–8 kHz 能量。FFT 缓冲按节点复用；指数 attack/release 平滑；ref 更新不触发 React 每帧渲染。静音、打断、停止、卸载后没有模拟活动。输入能量驱动汤盅，输出能量驱动点头与南瓜光源。
 
 ## 交互与真实性边界
 
 - CTA 不导航、不申请麦克风。面板出现后由明确的开麦按钮启动授权。
 - 七个角色沿用各自服务端人格、音色与同页语音路径。当前只有孟婆具备真实 GLB；其他角色明确展示为海报，不伪装为模型。
-- 孟婆 GLB 是烘焙网格，没有脸部 morph 或头骨骼。当前采用独立嘴部网格和极轻的整体点头/转向；不能宣称完成面部骨骼绑定。
+- 孟婆 GLB 是烘焙网格，没有脸部 morph 或头骨骼。面部保持静态，仅有极轻的整体点头/转向；遵守 [角色面部约束](../../AGENTS.md)，不能宣称完成口型动画或面部骨骼绑定。
 - 薄雾是低面数程序 Shader，不是物理体积散射。
 - 解忧签复用服务端结果及现有 PNG/QR 导出；燃字来自真实已确认用户发言中的短片段，不编造烦恼。视觉燃灰不等于删除服务器记录。
 - 减少动态效果偏好跳过镜头行进、漂移和燃字运动；字幕、语音、卡片仍可用。海报和失败提示保留。
@@ -71,6 +71,18 @@ Qwen PCM → 现有播放节点 → outputAnalyser → destination
 - `pnpm build`：生产构建与 TypeScript 检查通过。
 - `pnpm test`：当前工作树 15 个测试文件、66 项测试通过。
 - 浏览器测试使用合成 PCM、模拟 WS 与 Chromium 假输出设备；不走真实扬声器，不产生模型调用费用。
-- `playwright.immersive.config.ts` 提供 3200 端口与独立测试结果目录，便于与默认 3100 的测试隔离。运行：`pnpm exec playwright test tests/e2e/landing.spec.ts tests/e2e/immersive.spec.ts --config=playwright.immersive.config.ts --workers=1`。
+- 最初的 `playwright.immersive.config.ts` 固定使用 3200 端口与独立测试结果目录；当前隔离方式和命令见下节。
 - 本机初始 Chromium 音频时钟不推进，最小振荡器复现同样问题。测试增加 `--disable-audio-output` 使用假输出设备后恢复；未用模拟能量替代 AnalyserNode。
 - 机械设计检测已执行：42 项建议（字体级别、舞台色与旧 CSS 的设计文档映射），无非建议级问题；它不能代替视觉审查或真人设备验收。
+
+## 2026-11-07 测试隔离
+
+`playwright.immersive.config.ts` 仅覆盖测试结果目录，其余继承默认配置：`NETHER_E2E_PORT` 统一决定浏览器和测试服务的地址，不复用已有服务，避免命中其他工作区。未指定端口时使用 3100；要使用 3200，显式运行：
+
+```sh
+NETHER_E2E_PORT=3200 pnpm exec playwright test tests/e2e/landing.spec.ts tests/e2e/immersive.spec.ts --config=playwright.immersive.config.ts --workers=1
+```
+
+沉浸式与身份卡测试共用 `tests/e2e/fixtures.ts` 的静音 AudioContext 输出，继续执行真实 Web Audio、Worklet 与 PCM 播放图。它只隔离测试对宿主音频设备的依赖，不证明真人听感或实体设备通过；本次未将历史音频时钟停滞认定为已重新复现。
+
+CI 曾在沉浸式测试的全局 45 秒截止时停在已就绪的下载按钮前。本测试的全流程预算改为 90 秒，卡片就绪单独限制 10 秒，点击后下载事件限制 5 秒；这只是包含启动与 GLB 加载的测试预算，不是产品延迟达标证据。
