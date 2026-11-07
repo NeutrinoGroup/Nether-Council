@@ -5,6 +5,7 @@ import { readIdentity } from "@/lib/authSession";
 import { serverConfig } from "@/shared/server/config";
 import { CampaignClaims, ReferralClaims, sameOrigin, signTicket, verifyTicket } from "@/shared/server/tickets";
 export const runtime = "nodejs";
+export const preferredRegion = "sin1";
 const Input = z.strictObject({ locale: Locale, characterId: CharacterId.default("meng-po"), mode: z.enum(["personal", "host"]).default("personal"), invite: z.string().max(4096).optional().default(""), ref: z.string().max(4096).optional(), hostCredential: z.string().max(256).optional(), visitorId: z.uuid().optional() });
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
