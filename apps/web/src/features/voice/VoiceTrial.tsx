@@ -328,6 +328,12 @@ export function VoiceTrial({
               <dl className="timing">
                 <div><dt>{t.connection}</dt><dd>{view.connectMs} ms</dd></div>
                 {view.firstAudioMs !== undefined && <div><dt>{t.first}</dt><dd>{view.firstAudioMs} ms</dd></div>}
+                {view.latencySummary && view.latencySummary.totalTurns > 0 && (
+                  <>
+                    <div><dt>{locale === "zh" ? "轮次延迟 P50 / P95" : "Turn latency P50 / P95"}</dt><dd>{view.latencySummary.stages.endToEndPlaybackMs ? `${Math.round(view.latencySummary.stages.endToEndPlaybackMs.p50)} / ${Math.round(view.latencySummary.stages.endToEndPlaybackMs.p95)} ms` : "—"}</dd></div>
+                    <div><dt>{locale === "zh" ? "打断停止 P50 / P95" : "Barge-in stop P50 / P95"}</dt><dd>{view.latencySummary.stages.bargeInStopMs ? `${Math.round(view.latencySummary.stages.bargeInStopMs.p50)} / ${Math.round(view.latencySummary.stages.bargeInStopMs.p95)} ms` : "—"}</dd></div>
+                  </>
+                )}
               </dl>
             </details>
           )}

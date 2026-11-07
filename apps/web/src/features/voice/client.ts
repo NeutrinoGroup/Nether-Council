@@ -1,13 +1,22 @@
-import { ServerMessage, Session, EncounterDraft, IdentityResult, type UiAction, type CharacterId, type ConfirmedTurn, type Locale, type SoulMood } from "@nether/contracts";
-import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, isStoryText, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
+import { ServerMessage, Session, EncounterDraft, IdentityResult, type UiAction, type CharacterId, type ConfirmedTurn, type Locale, type SoulMood, type ServerTurnTiming } from "@nether/contracts";
+import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, isStoryText, normalizeNickname, recordTurn, type DisplayCaption, evaluateTurnSample, summarizeLatencySamples, type TurnLatencySample, type LatencyObservatorySummary, type MeasurementMode } from "@nether/party-core";
 import { demoAction, demoAudio, demoLines } from "./demo";
 import { AudioEngine } from "./audio/engine";
 import { getVisitorId } from "../analytics/visitor";
 export type SoulSoupView = { mood: SoulMood; worries: string[]; ritual?: { callId: string; blessing: string } };
-export type VoiceView = { soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
-export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
+export type VoiceEngine = Pick<AudioEngine, "start" | "prepareOutput" | "play" | "stopCapture" | "mute" | "rms" | "isPlaying" | "analysers" | "settings"> & { clear(): number | void; stop(): number | void; queuedMs?(): number };
+type ResponseLatency = { sample: Parameters<typeof evaluateTurnSample>[0]; turnStoppedAt?: number; firstAudio: boolean };
+export type VoiceView = { latencySamples: TurnLatencySample[]; latencySummary?: LatencyObservatorySummary; soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
+export const idleView: VoiceView = { latencySamples: [], phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
-  private audio = new AudioEngine();
+  private audio: VoiceEngine;
+  private turnStoppedAt?: number;
+  private bargeInStartedAt?: number;
+  private handshakeMs?: number;
+  private latencyTurnIndex = 0;
+  private responseLatency?: ResponseLatency;
+  private failedLatencyTurns = 0;
+  private awaitingTurnAudio = false;
   private socket?: WebSocket;
   private disposed = false;
   private ready = false;
@@ -43,7 +52,29 @@ export class VoiceClient {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private heartbeatDeadline?: ReturnType<typeof setTimeout>;
   private appliedCalls = new Set<string>();
-  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number } = {}) {}
+  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number; engine?: VoiceEngine; measurementMode?: MeasurementMode } = {}) { this.audio = options.engine ?? new AudioEngine(); }
+  private beginResponseLatency(responseId: string, timing?: ServerTurnTiming, responseStarted = true) {
+    if (this.responseLatency?.sample.responseId === responseId) return;
+    this.responseLatency = {
+      sample: { turnIndex: this.latencyTurnIndex++, responseId, mode: this.options.measurementMode ?? "provider", ...(this.handshakeMs === undefined ? {} : { handshakeMs: this.handshakeMs }), ...timing,
+        ...(this.turnStoppedAt === undefined || !responseStarted ? {} : { clientTurnToResponseMs: Math.max(0, Math.round(performance.now() - this.turnStoppedAt)) }) },
+      turnStoppedAt: this.turnStoppedAt,
+      firstAudio: false,
+    };
+  }
+  private publishLatency() {
+    const response = this.responseLatency;
+    if (!response?.firstAudio) return;
+    const sample = evaluateTurnSample(response.sample);
+    const latencySamples = [...this.view.latencySamples.filter(item => item.turnIndex !== sample.turnIndex), sample].slice(-32);
+    this.update({ latencySamples, latencySummary: summarizeLatencySamples(latencySamples, { mode: sample.mode, failedTurns: this.failedLatencyTurns }) });
+  }
+  private failPendingLatency() {
+    if (!this.awaitingTurnAudio) return;
+    this.awaitingTurnAudio = false;
+    this.failedLatencyTurns++;
+    this.update({ latencySummary: summarizeLatencySamples(this.view.latencySamples, { mode: this.options.measurementMode ?? "provider", failedTurns: this.failedLatencyTurns }) });
+  }
   private applyScene(payload: UiAction) {
     const soup = this.view.soup ?? { mood: "healing" as const, worries: [] };
     if (payload.action === "change_mood") {
@@ -81,6 +112,7 @@ export class VoiceClient {
   private localSpeech = () => { if (this.ready && this.audio.isPlaying() && !this.view.finalizing) this.interrupt(); };
   enterDemo(reason = "MANUAL", locale = this.view.session?.locale ?? this.demoLocale) {
     if (this.disposed || this.demo) return;
+    this.failPendingLatency(); this.turnStoppedAt = undefined; this.responseLatency = undefined;
     this.demo = true; this.isPrewarming = false; this.ready = false; this.demoLocale = locale;
     this.send({ type: "session.end" });
     this.epoch++; this.demoRevision++;
@@ -114,7 +146,9 @@ export class VoiceClient {
       void this.demoReply(Math.min(2, this.demoStep + 1)); return;
     }
     if (!this.ready) return;
-    this.interrupt(); this.armFallback(); this.send({ type: "text.submit", text });
+    this.interrupt();
+    this.turnStoppedAt = performance.now(); this.awaitingTurnAudio = true;
+    this.armFallback(); this.send({ type: "text.submit", text });
   }
   private update(patch: Partial<VoiceView>) { this.view = { ...this.view, ...patch }; this.notify(this.view); }
   async prewarm(
@@ -249,6 +283,7 @@ export class VoiceClient {
     if (this.disposed || this.demo || !session) return;
     this.armFallback(false);
     this.ready = false; this.seq = 0; this.lastSeq = -1;
+    this.turnStoppedAt = undefined; this.responseLatency = undefined; this.handshakeMs = undefined;
     const epoch = this.epoch;
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/ws`);
     this.socket = socket;
@@ -274,6 +309,7 @@ export class VoiceClient {
       if (event.type === "session.ready") {
         if (event.session.id !== session.id || event.session.expiresAt !== session.expiresAt) return this.fail("INVALID_PROTOCOL");
         clearTimeout(this.connectionTimer); clearTimeout(this.responseTimer); this.ready = true;
+        this.handshakeMs = event.timing?.handshakeMs; this.awaitingTurnAudio = true;
         if (this.options.demoFallback) {
           clearInterval(this.heartbeatTimer);
           const pingTimeout = this.options.networkTimeoutMs ?? 3000;
@@ -291,21 +327,39 @@ export class VoiceClient {
         if (this.canceled.has(event.responseId) || this.appliedCalls.has(event.callId) || event.responseId !== this.activeResponse || this.view.finalizing) return;
         this.appliedCalls.add(event.callId); this.applyScene(event.payload);
       } else if (event.type === "speech.stopped") {
-        if (!this.view.finalizing) this.armFallback();
+        if (!this.view.finalizing) { this.turnStoppedAt = performance.now(); this.awaitingTurnAudio = true; this.armFallback(); }
       } else if (event.type === "speech.started") {
         if (this.view.finalizing) return;
         clearTimeout(this.responseTimer);
-        this.interrupt(); this.update({ phase: "listening", userCaption: undefined });
+        this.interrupt(); this.turnStoppedAt = undefined; this.awaitingTurnAudio = false;
+        this.update({ phase: "listening", userCaption: undefined });
       } else if (event.type === "response.started") {
+        if (this.canceled.has(event.responseId)) return;
         if (this.view.finalizing && !this.result) { this.canceled.add(event.responseId); return; }
         this.armFallback();
+        this.beginResponseLatency(event.responseId, event.timing);
         this.activeResponse = event.responseId; this.update({ caption: undefined });
         if (this.view.finalizing && this.result) this.closingResponse = event.responseId;
       } else if (event.type === "audio.delta") {
         if (this.canceled.has(event.responseId) || (this.view.finalizing && !this.result)) return;
+        if (this.activeResponse && this.activeResponse !== event.responseId) return;
+        const receivedAt = performance.now();
+        this.beginResponseLatency(event.responseId, undefined, false);
+        const latency = this.responseLatency!;
+        const queueBacklogMs = latency.firstAudio ? undefined : this.audio.queuedMs?.();
         this.activeResponse = event.responseId;
         this.armFallback();
         try { this.audio.play(event.audio); } catch { return this.fail("PLAYBACK_FAILED"); }
+        if (!latency.firstAudio) {
+          latency.firstAudio = true; this.awaitingTurnAudio = false;
+          latency.sample = { ...latency.sample, ...event.timing,
+            ...(latency.turnStoppedAt === undefined ? {} : { clientTurnToFirstAudioMs: Math.max(0, Math.round(receivedAt - latency.turnStoppedAt)) }),
+            ...(queueBacklogMs === undefined ? {} : { queueBacklogMs }),
+            // Estimated scheduled start, not a microphone-observed sound onset.
+            playbackStartDelayMs: (queueBacklogMs ?? 0) + Math.max(0, Math.round(performance.now() - receivedAt)),
+          };
+          this.publishLatency();
+        }
         this.update({ phase: "speaking", ...(this.view.firstAudioMs === undefined ? { firstAudioMs: Math.round(performance.now() - this.startedAt) } : {}) });
       } else if (event.type === "soul.action") {
         if (session.characterId !== "meng-po" || this.canceled.has(event.responseId) || this.soulCalls.has(event.callId) || this.completedSoulResponses.has(event.responseId) || event.responseId !== this.activeResponse) return;
@@ -340,10 +394,16 @@ export class VoiceClient {
         try { sessionStorage.setItem(`nc_result_${event.result.sessionId}`, JSON.stringify(event.result)); } catch {}
         this.update({ result: event.result });
       } else if (event.type === "response.done") {
+        if (!this.canceled.has(event.responseId) && this.responseLatency?.sample.responseId === event.responseId) {
+          this.responseLatency.sample = { ...this.responseLatency.sample, ...event.timing };
+          this.publishLatency();
+          this.failPendingLatency(); this.turnStoppedAt = undefined;
+        }
         this.completedSoulResponses.add(event.responseId);
         if (!this.canceled.has(event.responseId)) clearTimeout(this.responseTimer);
         if (this.view.finalizing && this.result && event.responseId === this.closingResponse) { this.closingDone = true; this.finishWhenDrained(); }
       } else if (event.type === "error") {
+        this.failPendingLatency();
         if (this.view.finalizing) { this.stop(this.finishReason); return; }
         if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
       }
@@ -356,6 +416,7 @@ export class VoiceClient {
         this.isPrewarming = false;
         return;
       }
+      this.failPendingLatency(); this.turnStoppedAt = undefined; this.responseLatency = undefined;
       this.clearNetworkTimers(); this.armFallback();
       clearTimeout(this.connectionTimer); this.ready = false; this.audio.clear(); this.activeResponse = undefined;
       this.update({ caption: undefined, userCaption: undefined });
@@ -373,10 +434,20 @@ export class VoiceClient {
     this.socket.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: this.view.session.id, epoch: this.epoch, seq: this.seq++, ...event }));
   }
   interrupt() {
-    const at = performance.now(); clearTimeout(this.responseTimer); this.audio.clear();
+    const at = performance.now();
+    const wasSpeaking = this.view.phase === "speaking" || this.audio.isPlaying();
+    this.bargeInStartedAt = wasSpeaking ? at : undefined;
+    clearTimeout(this.responseTimer); this.audio.clear();
+    const stopMs = Math.max(0, Math.round(performance.now() - at));
+    if (!this.demo && this.bargeInStartedAt !== undefined && this.responseLatency?.firstAudio && this.activeResponse === this.responseLatency.sample.responseId) {
+      this.responseLatency.sample.bargeInStopMs = Math.max(0, Math.round(performance.now() - this.bargeInStartedAt));
+      this.publishLatency();
+    }
+    this.bargeInStartedAt = undefined;
+    this.turnStoppedAt = undefined; this.awaitingTurnAudio = false;
     if (this.demo) { this.demoRevision++; this.update({ phase: "listening", interruptedAt: at }); return; }
     if (this.activeResponse) { this.canceled.add(this.activeResponse); this.send({ type: "response.cancel", responseId: this.activeResponse }); this.activeResponse = undefined; }
-    this.update({ phase: this.ready ? "listening" : this.view.phase, caption: undefined, interruptedAt: at, stopMs: Math.round(performance.now() - at) });
+    this.update({ phase: this.ready ? "listening" : this.view.phase, caption: undefined, interruptedAt: at, stopMs });
     if (this.view.finalizing && this.result) this.stop(this.finishReason);
   }
   mute(value: boolean) { this.audio.mute(value); this.update({ muted: value }); }
@@ -408,7 +479,7 @@ export class VoiceClient {
     this.armFallback();
     this.send({ type: "session.finalize" });
   }
-  private fail(error: string) { if (this.options.demoFallback && ["MICROPHONE_DENIED", "CONNECTION_FAILED", "PLAYBACK_FAILED", "RECONNECT_EXHAUSTED", "UPLOAD_BACKLOG"].includes(error)) { this.enterDemo(error); return; } this.stop("error"); this.update({ phase: "error", error }); }
+  private fail(error: string) { this.failPendingLatency(); if (this.options.demoFallback && ["MICROPHONE_DENIED", "CONNECTION_FAILED", "PLAYBACK_FAILED", "RECONNECT_EXHAUSTED", "UPLOAD_BACKLOG"].includes(error)) { this.enterDemo(error); return; } this.stop("error"); this.update({ phase: "error", error }); }
   stop(reason: NonNullable<VoiceView["endReason"]> = "user") {
     if (this.disposed) return;
     let draft: EncounterDraft | undefined;

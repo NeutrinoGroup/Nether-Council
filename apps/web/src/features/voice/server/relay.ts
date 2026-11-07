@@ -2,7 +2,7 @@ import { parseTool, sceneTools, sceneInstructions } from "./tools";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
-import { UiAction, parseClientMessage, type Caption, type ConfirmedTurn, type Session, type ServerMessage } from "@nether/contracts";
+import { UiAction, parseClientMessage, type Caption, type ConfirmedTurn, type Session, type ServerMessage, type ServerTurnTiming } from "@nether/contracts";
 import { recordTurn, encounterProgress, getCharacter } from "@nether/party-core";
 import { characterPrompt, openingPrompt } from "./prompt";
 import { parseSoulCall, soulStageInstruction, soulTools } from "./soul-tools";
@@ -35,6 +35,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let seq = 0, lastClientSeq = -1, epoch = 0, activeResponse: string | undefined;
     let bytes = 0, count = 0, readyAt = 0, pendingCancelErrors = 0;
     let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    let upstreamOpenStartedAt = 0, handshakeMs: number | undefined;
+    let speechStartedAt: number | undefined, turnStoppedAt: number | undefined, lastVadSpeechMs: number | undefined;
+    let continuationStartedAt: number | undefined;
+    let responseTurnStoppedAt: number | undefined, responseContinuationStartedAt: number | undefined;
+    let responseTiming: ServerTurnTiming = {};
+    const elapsed = (start: number) => Math.max(0, Math.round(performance.now() - start));
     let confirmedTurns: ConfirmedTurn[] = [];
     let finalizing = false;
     let farewellRequested = false;
@@ -95,6 +101,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     function beginFinalize() {
         if (closed || finalizing) return;
         cancel();
+        speechStartedAt = turnStoppedAt = lastVadSpeechMs = continuationStartedAt = undefined;
         const progress = encounterProgress(confirmedTurns, Date.now() - session.createdAt);
         if (!progress.canClaim) {
           send({
@@ -182,7 +189,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       clearTimeout(readyTimer);
       ready = true;
       readyAt = Date.now();
-      send({ type: "session.ready", session });
+      send({ type: "session.ready", session, timing: { handshakeMs: handshakeMs ?? elapsed(upstreamOpenStartedAt) } });
       if (isMengPo && resumeTurnsState.length) upstreamSend({ type: "session.update", session: { instructions: instructions() } });
       upstreamSend({
         type: "conversation.item.create",
@@ -204,6 +211,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     };
 
     const openUpstream = () => {
+      upstreamOpenStartedAt = performance.now();
       readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 25000);
       const url = new URL(config.gatewayUrl || config.realtimeUrl);
       url.searchParams.set("model", config.realtimeModel);
@@ -234,17 +242,25 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             },
           });
         } else if (event.type === "session.updated" && !ready) {
+          handshakeMs ??= elapsed(upstreamOpenStartedAt);
           upstreamReady = true;
           triggerReady();
         } else if (event.type === "input_audio_buffer.speech_started") {
           if (finalizing) return;
+          speechStartedAt = performance.now();
+          turnStoppedAt = lastVadSpeechMs = continuationStartedAt = undefined;
           currentUserItem = event.item_id;
           toolContinuations = 0;
           translations.clear();
           cancel();
           send({ type: "speech.started" });
         } else if (event.type === "input_audio_buffer.speech_stopped") {
-          if (!finalizing) send({ type: "speech.stopped" });
+          if (!finalizing) {
+            turnStoppedAt = performance.now();
+            lastVadSpeechMs = speechStartedAt === undefined ? undefined : Math.max(0, Math.round(turnStoppedAt - speechStartedAt));
+            speechStartedAt = undefined;
+            send({ type: "speech.stopped" });
+          }
         } else if (event.type === "response.created" && event.response) {
           if (finalizing && !farewellRequested) {
             canceled.add(event.response.id);
@@ -253,8 +269,15 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             return;
           }
           activeResponse = event.response.id;
+          responseTurnStoppedAt = turnStoppedAt;
+          responseContinuationStartedAt = continuationStartedAt;
+          continuationStartedAt = undefined;
+          responseTiming = {
+            ...(lastVadSpeechMs === undefined ? {} : { vadSpeechMs: lastVadSpeechMs }),
+            ...(turnStoppedAt === undefined ? {} : { serverTurnToResponseMs: elapsed(turnStoppedAt) }),
+          };
           translations.invalidate("character");
-          send({ type: "response.started", responseId: event.response.id });
+          send({ type: "response.started", responseId: event.response.id, ...(Object.keys(responseTiming).length ? { timing: responseTiming } : {}) });
         } else if (event.type === "gateway.tool_result" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && !canceled.has(event.response_id)) {
           toolCalls.add(event.call_id); responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
         } else if (event.type === "UI_ACTION" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.payload && !canceled.has(event.response_id)) {
@@ -271,12 +294,18 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           upstreamSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: event.call_id, output: JSON.stringify(payload ? { ok: true } : { error: "INVALID_TOOL_ARGUMENTS" }) } });
           responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
         } else if (event.type === "response.audio.delta" && event.response_id && event.delta && !canceled.has(event.response_id) && event.response_id === activeResponse) {
-          responsesWithAudio.add(event.response_id);
+          const firstAudio = !responsesWithAudio.has(event.response_id);
           const pcm = Buffer.from(event.delta, "base64");
           for (let offset = 0; offset < pcm.length; offset += 24_000) {
             const chunk = pcm.subarray(offset, Math.min(offset + 24_000, pcm.length));
             if (chunk.length % 2 !== 0) return fail("UPSTREAM_UNAVAILABLE");
-            send({ type: "audio.delta", responseId: event.response_id, audio: chunk.toString("base64") });
+            const timing: ServerTurnTiming | undefined = firstAudio && offset === 0 ? {
+              ...(responseTurnStoppedAt === undefined ? {} : { serverTurnToFirstAudioMs: elapsed(responseTurnStoppedAt) }),
+              ...(responseContinuationStartedAt === undefined ? {} : { toolContinuationMs: elapsed(responseContinuationStartedAt) }),
+            } : undefined;
+            if (timing) responseTiming = { ...responseTiming, ...timing };
+            responsesWithAudio.add(event.response_id);
+            send({ type: "audio.delta", responseId: event.response_id, audio: chunk.toString("base64"), ...(timing && Object.keys(timing).length ? { timing } : {}) });
           }
         } else if (event.type === "response.function_call_arguments.done" && isMengPo && event.response_id && event.call_id && event.name && event.arguments !== undefined) {
           if (event.response_id !== activeResponse || canceled.has(event.response_id) || toolCalls.has(event.call_id)) return;
@@ -312,14 +341,17 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           }
           // Tool-only generations need one continuation after ALL calls finish, never one per call.
           const continueSpeech = responsesWithTools.has(event.response.id) && (!responsesWithAudio.has(event.response.id) || canonicalResponses.has(event.response.id)) && toolContinuations < 4 && event.response.status !== "cancelled" && event.response.status !== "failed";
-          if (!continueSpeech) send({ type: "response.done", responseId: event.response.id });
+          if (!continueSpeech) send({ type: "response.done", responseId: event.response.id, ...(Object.keys(responseTiming).length ? { timing: responseTiming } : {}) });
           captions.delete(event.response.id);
           responsesWithTools.delete(event.response.id); responsesWithAudio.delete(event.response.id);
           if (activeResponse === event.response.id) activeResponse = undefined;
           if (continueSpeech) {
             toolContinuations++;
             upstreamSend({ type: "session.update", session: { instructions: instructions() } });
+            continuationStartedAt = performance.now();
             upstreamSend({ type: "response.create" });
+          } else {
+            turnStoppedAt = lastVadSpeechMs = continuationStartedAt = undefined;
           }
           canonicalResponses.delete(event.response.id);
         } else if (event.type === "error") {
@@ -383,6 +415,8 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       if (event.type === "text.submit") {
         if (finalizing || Date.now() >= session.captureUntil) return;
         cancel();
+        turnStoppedAt = performance.now();
+        speechStartedAt = lastVadSpeechMs = continuationStartedAt = undefined;
         const itemId = `text_${randomUUID()}`;
         currentUserItem = itemId;
         const caption: Caption = { sessionId: session.id, epoch, responseId: itemId, segmentId: itemId, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.text, final: true };

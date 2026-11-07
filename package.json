@@ -19,6 +19,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "probe:providers": "tsx scripts/probe-providers.ts",
     "probe:relay": "tsx scripts/probe-relay.ts",
+    "bench:voice-latency": "tsx --tsconfig apps/web/tsconfig.json scripts/benchmark-voice-latency.ts",
     "verify:soul-soup": "tsx scripts/verify-soul-soup.ts",
     "verify:real": "tsx scripts/verify-real-encounter.ts",
     "env:vercel": "tsx scripts/configure-vercel.ts",
