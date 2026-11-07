@@ -6,7 +6,7 @@ import { getVisitorId } from "../analytics/visitor";
 export type SoulSoupView = { mood: SoulMood; worries: string[]; ritual?: { callId: string; blessing: string } };
 export type VoiceEngine = Pick<AudioEngine, "start" | "prepareOutput" | "play" | "stopCapture" | "mute" | "rms" | "isPlaying" | "analysers" | "settings"> & { clear(): number | void; stop(): number | void; queuedMs?(): number };
 type ResponseLatency = { sample: Parameters<typeof evaluateTurnSample>[0]; turnStoppedAt?: number; firstAudio: boolean };
-export type VoiceView = { latencySamples: TurnLatencySample[]; latencySummary?: LatencyObservatorySummary; soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "thinking" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
+export type VoiceView = { latencySamples: TurnLatencySample[]; latencySummary?: LatencyObservatorySummary; soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string; farewell?: string; endingRequested?: boolean; searchStatus?: { query: string; status: "searching" | "completed" | "fallback" } }; phase: "idle" | "permission" | "connecting" | "listening" | "thinking" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
 export const idleView: VoiceView = { latencySamples: [], phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
   private audio: VoiceEngine;
@@ -52,6 +52,7 @@ export class VoiceClient {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private heartbeatDeadline?: ReturnType<typeof setTimeout>;
   private appliedCalls = new Set<string>();
+  private searchingCalls = new Set<string>();
   constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number; engine?: VoiceEngine; measurementMode?: MeasurementMode } = {}) { this.audio = options.engine ?? new AudioEngine(); }
   private beginResponseLatency(responseId: string, timing?: ServerTurnTiming, responseStarted = true) {
     if (this.responseLatency?.sample.responseId === responseId) return;
@@ -76,13 +77,21 @@ export class VoiceClient {
     this.update({ latencySummary: summarizeLatencySamples(this.view.latencySamples, { mode: this.options.measurementMode ?? "provider", failedTurns: this.failedLatencyTurns }) });
   }
   private applyScene(payload: UiAction) {
+    const scene = this.view.scene ?? { mood: "calm" as const };
+    if (payload.action === "end_conversation") {
+      this.update({ sceneAction: payload, scene: { ...scene, farewell: payload.data.farewell, endingRequested: true } });
+      return;
+    }
+    if (payload.action === "web_search_status") {
+      this.update({ sceneAction: payload, scene: { ...scene, searchStatus: payload.data } });
+      return;
+    }
     const soup = this.view.soup ?? { mood: "healing" as const, worries: [] };
     if (payload.action === "change_mood") {
       const mood = payload.data.mood;
       this.update({ soup: { ...soup, mood: mood === "storm" ? "angry_support" : mood === "warm" ? "laughing" : mood === "calm" ? "healing" : mood } });
     } else if (payload.action === "extract_worry") this.update({ soup: { ...soup, worries: [...new Set([...soup.worries, payload.data.worry])].slice(-3) } });
     else this.update({ soup: { ...soup, mood: "mystical", ritual: { callId: crypto.randomUUID(), blessing: payload.data.blessing } } });
-    const scene = this.view.scene ?? { mood: "calm" as const };
     this.update({ sceneAction: payload, scene: payload.action === "change_mood" ? { ...scene, mood: (payload.data.mood === "storm" || payload.data.mood === "angry_support" ? "storm" : payload.data.mood === "warm" || payload.data.mood === "laughing" ? "warm" : "calm") } : payload.action === "extract_worry" ? { ...scene, worry: payload.data.worry, blessing: undefined } : { ...scene, mood: "warm", blessing: payload.data.blessing } });
   }
   private armFallback(reset = true) {
@@ -338,7 +347,14 @@ export class VoiceClient {
         clearTimeout(this.heartbeatDeadline); this.heartbeatDeadline = undefined;
       } else if (event.type === "UI_ACTION") {
         if (this.canceled.has(event.responseId) || this.appliedCalls.has(event.callId) || event.responseId !== this.activeResponse || this.view.finalizing) return;
-        this.appliedCalls.add(event.callId); this.applyScene(event.payload);
+        if (event.payload.action === "web_search_status" && event.payload.data.status === "searching") {
+          if (this.searchingCalls.has(event.callId)) return;
+          this.searchingCalls.add(event.callId);
+        } else {
+          this.searchingCalls.delete(event.callId);
+          this.appliedCalls.add(event.callId);
+        }
+        this.applyScene(event.payload);
       } else if (event.type === "speech.stopped") {
         if (!this.view.finalizing) { this.turnStoppedAt = performance.now(); this.awaitingTurnAudio = true; this.armFallback(); this.update({ phase: "thinking", interruptedAt: undefined }); }
       } else if (event.type === "speech.started") {
@@ -438,7 +454,7 @@ export class VoiceClient {
       if ((code === 1000 && !retryRequested) || Date.now() >= session.captureUntil) return this.stop(Date.now() >= session.captureUntil ? "time_limit" : "user");
       if (this.view.reconnects >= RECONNECT_DELAYS_MS.length) return this.fail("RECONNECT_EXHAUSTED");
       const delay = RECONNECT_DELAYS_MS[this.view.reconnects] + Math.random() * 250;
-      this.epoch++; this.canceled.clear(); this.appliedCalls.clear();
+      this.epoch++; this.canceled.clear(); this.appliedCalls.clear(); this.searchingCalls.clear();
       this.update({ phase: "reconnecting", reconnects: this.view.reconnects + 1 });
       this.reconnectTimer = setTimeout(() => this.connect(), delay);
     };

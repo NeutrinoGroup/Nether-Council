@@ -246,3 +246,37 @@ test("unavailable local storage omits the visitor identity without blocking admi
   expect(JSON.parse(String(request?.[1]?.body))).not.toHaveProperty("visitorId");
   expect(Socket.instances).toHaveLength(1);
 });
+
+test("shared UI actions preserve scene and soul state, accept both search statuses and never claim a story", async () => {
+  let view: VoiceView | undefined;
+  current = new VoiceClient(value => { view = value; }); await current.start("en", "fixture");
+  const socket = Socket.instances[0]; let seq = 0;
+  const send = (payload: object) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...payload }) });
+  const action = (callId: string, action: string, data: object, responseId = "active") => send({ type: "UI_ACTION", responseId, callId, payload: { action, data } });
+  send({ type: "response.started", responseId: "active" });
+  action("mood", "change_mood", { mood: "storm" });
+  action("worry", "extract_worry", { worry: "meetings" });
+  action("blessing", "finish_ritual", { blessing: "Rest well" });
+  const soup = view?.soup;
+  action("search", "web_search_status", { query: "weather", status: "searching" });
+  expect(view?.scene).toEqual({ mood: "warm", worry: "meetings", blessing: "Rest well", searchStatus: { query: "weather", status: "searching" } });
+  action("search", "web_search_status", { query: "weather", status: "completed" });
+  action("search", "web_search_status", { query: "duplicate", status: "searching" });
+  expect(view?.scene?.searchStatus).toEqual({ query: "weather", status: "completed" });
+  action("end", "end_conversation", { reason: "user_goodbye", farewell: "Good night." });
+  action("end", "end_conversation", { farewell: "Duplicate" });
+  expect(view?.scene).toEqual({ mood: "warm", worry: "meetings", blessing: "Rest well", searchStatus: { query: "weather", status: "completed" }, farewell: "Good night.", endingRequested: true });
+  expect(view?.soup).toEqual(soup);
+  expect(view).toMatchObject({ canClaim: false, claimReady: false, userTurns: 0 });
+  expect(view?.result).toBeUndefined();
+  expect(socket.sent.some(event => event.type === "session.finalize")).toBe(false);
+  send({ type: "speech.started" });
+  action("stale-search", "web_search_status", { query: "late", status: "fallback" });
+  action("stale-end", "end_conversation", { farewell: "Too late" });
+  expect(view?.scene?.farewell).toBe("Good night.");
+  expect(view?.scene?.searchStatus?.status).toBe("completed");
+  send({ type: "response.started", responseId: "next" });
+  action("offline", "web_search_status", { query: "weather", status: "searching" }, "next");
+  action("offline", "web_search_status", { query: "weather", status: "fallback" }, "next");
+  expect(view?.scene?.searchStatus?.status).toBe("fallback");
+});

@@ -178,6 +178,7 @@ test.each([false, true])("Meng Po tools stream alongside audio, validate, dedupe
   await waitFor(() => received.some(e => e.type === "session.ready"));
   expect(requests.find(e => e.type === "session.update")?.session).toMatchObject({ tools: [
     { function: { name: "change_mood" } }, { function: { name: "extract_worry_keyword" } }, { function: { name: "trigger_soul_soup_ritual" } },
+    { function: { name: "end_conversation" } }, { function: { name: "web_search" } },
   ] });
   const emit = (e: object) => remote!.send(JSON.stringify(e));
   const call = (response: string, id: string, name: string, args: unknown) => emit({ type: "response.function_call_arguments.done", response_id: response, call_id: id, name, arguments: typeof args === "string" ? args : JSON.stringify(args) });
