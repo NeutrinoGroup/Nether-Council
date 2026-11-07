@@ -88,7 +88,8 @@ export class VoiceClient {
   private armFallback(reset = true) {
     if (!reset && this.responseTimer !== undefined) return;
     clearTimeout(this.responseTimer);
-    const timeout = this.options.networkTimeoutMs ?? 3000;
+    this.responseTimer = undefined;
+    const timeout = this.options.networkTimeoutMs ?? 15000;
     if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) {
       this.responseTimer = setTimeout(() => {
         if (this.audio.isPlaying()) {
@@ -101,12 +102,17 @@ export class VoiceClient {
   }
   private armPermissionFallback() {
     clearTimeout(this.responseTimer);
-    if (this.options.demoFallback && !this.demo && !this.disposed && !this.isPrewarming) {
-      this.responseTimer = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), this.options.permissionTimeoutMs ?? 3000);
+    this.responseTimer = undefined;
+    if (!this.demo && !this.disposed && !this.isPrewarming) {
+      this.responseTimer = setTimeout(() => {
+        if (this.options.demoFallback) this.enterDemo("NETWORK_TIMEOUT");
+        else this.fail("MICROPHONE_TIMEOUT");
+      }, this.options.permissionTimeoutMs ?? 15000);
     }
   }
   private clearNetworkTimers() {
     clearTimeout(this.responseTimer); clearTimeout(this.heartbeatDeadline); clearInterval(this.heartbeatTimer);
+    this.responseTimer = undefined;
     this.heartbeatDeadline = undefined;
   }
   private localSpeech = () => { if (this.ready && this.audio.isPlaying() && !this.view.finalizing) this.interrupt(); };
@@ -243,6 +249,8 @@ export class VoiceClient {
       if (this.disposed || this.demo) { this.audio.stopCapture(); return; }
       this.update({ phase: "connecting" });
       this.armFallback();
+      // Admission must also finish or report an error when automatic demo is off.
+      if (!this.options.demoFallback) this.connectionTimer = setTimeout(() => this.fail("NETWORK_TIMEOUT"), this.options.networkTimeoutMs ?? 15000);
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -258,6 +266,7 @@ export class VoiceClient {
         }),
       });
       const body = await response.json();
+      clearTimeout(this.connectionTimer);
       if (this.disposed || this.demo) return;
       if (!response.ok) return this.fail(typeof body.error === "string" ? body.error : "ADMISSION_FAILED");
       const session = Session.parse(body.session);
@@ -289,7 +298,11 @@ export class VoiceClient {
     this.socket = socket;
     const current = () => !this.disposed && !this.demo && socket === this.socket && epoch === this.epoch;
     let retryRequested = false;
-    this.connectionTimer = setTimeout(() => { if (current()) { retryRequested = true; socket.close(); } }, 20000);
+    // The relay allows 25s for the upstream handshake and 30s for session readiness.
+    // Leave time for both network legs before abandoning a live connection.
+    this.connectionTimer = setTimeout(() => {
+      if (current()) { retryRequested = true; this.update({ phase: "reconnecting" }); socket.close(); }
+    }, Math.max(35000, this.options.networkTimeoutMs ?? 15000));
     socket.onopen = () => {
       const history = this.turns.slice(-4).map(t => ({ role: t.speaker === "user" ? "user" as const : "assistant" as const, text: t.text }));
       if (current()) {
@@ -312,14 +325,14 @@ export class VoiceClient {
         this.handshakeMs = event.timing?.handshakeMs; this.awaitingTurnAudio = true;
         if (this.options.demoFallback) {
           clearInterval(this.heartbeatTimer);
-          const pingTimeout = this.options.networkTimeoutMs ?? 3000;
+          const pingTimeout = this.options.networkTimeoutMs ?? 15000;
           this.heartbeatTimer = setInterval(() => {
             if (!this.heartbeatDeadline) this.heartbeatDeadline = setTimeout(() => this.enterDemo("NETWORK_TIMEOUT"), pingTimeout);
             this.send({ type: "ping" });
           }, 1000);
         }
         if (!this.isPrewarming) {
-          this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
+          this.update({ phase: "listening", error: undefined, connectMs: Math.round(performance.now() - this.startedAt) });
         }
       } else if (event.type === "pong") {
         clearTimeout(this.heartbeatDeadline); this.heartbeatDeadline = undefined;
@@ -406,11 +419,11 @@ export class VoiceClient {
       } else if (event.type === "error") {
         this.failPendingLatency();
         if (this.view.finalizing) { this.stop(this.finishReason); return; }
-        if (event.error.retryable) { retryRequested = true; socket.close(); } else this.fail(event.error.code);
+        if (event.error.retryable) { retryRequested = true; this.update({ phase: "reconnecting" }); socket.close(); } else this.fail(event.error.code);
       }
       // response.done marks generation, not the end of actual scheduled playback.
     };
-    socket.onerror = () => { if (current()) { retryRequested = true; socket.close(); } };
+    socket.onerror = () => { if (current()) { retryRequested = true; this.update({ phase: "reconnecting" }); socket.close(); } };
     socket.onclose = ({ code }) => {
       if (!current()) return;
       if (this.isPrewarming) {
@@ -480,7 +493,17 @@ export class VoiceClient {
     this.armFallback();
     this.send({ type: "session.finalize" });
   }
-  private fail(error: string) { this.failPendingLatency(); if (this.options.demoFallback && ["MICROPHONE_DENIED", "CONNECTION_FAILED", "PLAYBACK_FAILED", "RECONNECT_EXHAUSTED", "UPLOAD_BACKLOG"].includes(error)) { this.enterDemo(error); return; } this.stop("error"); this.update({ phase: "error", error }); }
+  private fail(error: string) {
+    if (this.disposed || this.demo) return;
+    this.failPendingLatency();
+    if (this.options.demoFallback && ["MICROPHONE_DENIED", "CONNECTION_FAILED", "PLAYBACK_FAILED", "RECONNECT_EXHAUSTED", "UPLOAD_BACKLOG"].includes(error)) {
+      this.enterDemo(error); return;
+    }
+    // Retryable socket/provider failures use the bounded reconnect path above.
+    // Terminal errors release capture and expose the start button for a fresh try.
+    this.stop("error");
+    this.update({ phase: "error", error });
+  }
   stop(reason: NonNullable<VoiceView["endReason"]> = "user") {
     if (this.disposed) return;
     let draft: EncounterDraft | undefined;

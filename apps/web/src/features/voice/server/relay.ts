@@ -226,10 +226,11 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
 
     const openUpstream = () => {
       upstreamOpenStartedAt = performance.now();
-      readyTimer = setTimeout(() => { diagnostic("ready_timeout"); fail("UPSTREAM_UNAVAILABLE"); }, 25000);
+      // Allow session configuration to finish after a slow 25s WebSocket handshake.
+      readyTimer = setTimeout(() => { diagnostic("ready_timeout", "SESSION_READY_TIMEOUT"); fail("UPSTREAM_UNAVAILABLE"); }, 30000);
       const url = new URL(config.gatewayUrl || config.realtimeUrl);
       url.searchParams.set("model", config.realtimeModel);
-      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.gatewayUrl ? config.gatewaySecret : config.realtimeKey}`, ...(config.gatewayUrl ? { "X-Nether-Continuation": "edge" } : {}) }, handshakeTimeout: 20_000, family: 4, maxPayload: 1_048_576 });
+      upstream = new WebSocket(url, { headers: { Authorization: `Bearer ${config.gatewayUrl ? config.gatewaySecret : config.realtimeKey}`, ...(config.gatewayUrl ? { "X-Nether-Continuation": "edge" } : {}) }, handshakeTimeout: 25_000, family: 4, maxPayload: 1_048_576 });
 
       upstream.on("unexpected-response", (_, response) => { response.resume(); diagnostic("handshake", response.statusCode); fail("UPSTREAM_UNAVAILABLE"); });
       upstream.on("error", error => { if (!closed) { diagnostic("transport", error.message === "Opening handshake has timed out" ? "HANDSHAKE_TIMEOUT" : "code" in error ? String(error.code) : undefined); fail("UPSTREAM_UNAVAILABLE"); } });

@@ -74,7 +74,7 @@ export function VoiceTrial({
       if (!event.shiftKey || event.code !== "KeyD" || event.repeat || event.ctrlKey || event.altKey || event.metaKey || target?.closest("input, textarea, [contenteditable=true]")) return;
       event.preventDefault();
       client.current?.stop();
-      const next = new VoiceClient(setView, { demoFallback: true, permissionTimeoutMs: 15000 });
+      const next = new VoiceClient(setView);
       client.current = next; next.enterDemo("MANUAL", locale);
     };
     document.addEventListener("keydown", onKey);
@@ -105,7 +105,7 @@ export function VoiceTrial({
     const name = normalizeNickname(nickname);
     setNickname(name);
     client.current?.stop();
-    const next = new VoiceClient(setView, { demoFallback: true, permissionTimeoutMs: 15000 });
+    const next = new VoiceClient(setView, { demoFallback: false, networkTimeoutMs: 15000, permissionTimeoutMs: 15000 });
     client.current = next;
     void next.start(locale, invite, referral, name, characterId);
   };
@@ -118,9 +118,6 @@ export function VoiceTrial({
     }
     if (view.phase === "speaking") {
       return locale === "zh" ? `${charMeta.name.zh}正在说话` : `${charMeta.name.en} is speaking`;
-    }
-    if (view.phase === "connecting") {
-      return locale === "zh" ? `正在接通${charMeta.name.zh}` : `Connecting to ${charMeta.name.en}`;
     }
     return t.states[view.phase];
   };
