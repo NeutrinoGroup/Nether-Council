@@ -80,6 +80,7 @@ export class AudioEngine {
   }
   analysers() { return { input: this.capturing && !this.muted ? this.inputAnalyser : undefined, output: this.isPlaying() ? this.analyser : undefined }; }
   isPlaying() { return this.submitted > this.consumed; }
+  queuedMs(): number { return Math.max(0, Math.round((this.submitted - this.consumed) / 24000 * 1000)); }
   settings() { return this.stream?.getAudioTracks()[0]?.getSettings(); }
   mute(value: boolean) {
     this.muted = value; this.speechMs = this.silenceMs = 0; this.voiceActive = false;
@@ -102,9 +103,12 @@ export class AudioEngine {
     const samples = new Float32Array(this.analyser.fftSize); this.analyser.getFloatTimeDomainData(samples);
     return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
   }
-  clear() {
+  clear(): number {
+    const startedAt = performance.now();
     this.submitted = this.consumed = 0;
     this.playback?.port.postMessage({ type: "clear", generation: ++this.generation });
+    // Command dispatch duration; the worklet and physical output stop later.
+    return performance.now() - startedAt;
   }
   stopCapture() {
     this.capturing = false; this.captureGeneration++;
@@ -114,9 +118,11 @@ export class AudioEngine {
     this.stream?.getTracks().forEach(track => track.stop());
     this.capture = undefined; this.source = undefined; this.silent = undefined;
   }
-  stop() {
-    if (this.disposed) return; this.disposed = true; this.clear();
+  stop(): number {
+    const startedAt = performance.now();
+    if (this.disposed) return 0; this.disposed = true; this.clear();
     this.stopCapture(); this.analyser?.disconnect(); this.playback?.disconnect();
     if (this.context && this.context.state !== "closed") void this.context.close();
+    return performance.now() - startedAt;
   }
 }

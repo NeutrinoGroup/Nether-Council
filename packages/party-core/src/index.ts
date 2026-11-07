@@ -1,4 +1,5 @@
 import type { Caption, IdentityResult, Session } from "@nether/contracts";
+export { computePercentileStats, evaluateTurnSample, summarizeLatencySamples, type MeasurementMode, type TurnLatencySample, type PercentileStats, type LatencyObservatorySummary } from "./latency";
 export { applyTranslation, encounterProgress, isStoryText, normalizeNickname, recordTurn, CLAIM_PROMPT_MS, type DisplayCaption } from "./encounter";
 export { CHARACTERS, CHARACTER_IDS, getCharacter, type CharacterMeta, type CardTheme } from "./characters";
 export const CAPTURE_LIMIT_MS = 180_000;

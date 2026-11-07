@@ -57,15 +57,23 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.strictObject({ ...envelope, type: z.literal("ping") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
+export const ServerTurnTiming = z.object({
+  handshakeMs: z.number().int().nonnegative().optional(),
+  vadSpeechMs: z.number().int().nonnegative().optional(),
+  serverTurnToResponseMs: z.number().int().nonnegative().optional(),
+  serverTurnToFirstAudioMs: z.number().int().nonnegative().optional(),
+  toolContinuationMs: z.number().int().nonnegative().optional(),
+}).strict();
+export type ServerTurnTiming = z.infer<typeof ServerTurnTiming>;
 export const ServerMessage = z.discriminatedUnion("type", [
   z.strictObject({ ...envelope, type: z.literal("soul.action"), responseId: z.string().min(1).max(160), callId: z.string().min(1).max(160), action: SoulAction }),
   z.strictObject({ ...envelope, type: z.literal("UI_ACTION"), responseId: z.string().min(1).max(160), callId: z.string().min(1).max(160), payload: UiAction }),
-  z.strictObject({ ...envelope, type: z.literal("session.ready"), session: Session }),
+  z.strictObject({ ...envelope, type: z.literal("session.ready"), session: Session, timing: ServerTurnTiming.optional() }),
   z.strictObject({ ...envelope, type: z.literal("speech.started") }),
   z.strictObject({ ...envelope, type: z.literal("speech.stopped") }),
-  z.strictObject({ ...envelope, type: z.literal("audio.delta"), responseId: z.string().max(160), audio: pcmBase64 }),
-  z.strictObject({ ...envelope, type: z.literal("response.done"), responseId: z.string().max(160) }),
-  z.strictObject({ ...envelope, type: z.literal("response.started"), responseId: z.string().max(160) }),
+  z.strictObject({ ...envelope, type: z.literal("audio.delta"), responseId: z.string().max(160), audio: pcmBase64, timing: ServerTurnTiming.optional() }),
+  z.strictObject({ ...envelope, type: z.literal("response.done"), responseId: z.string().max(160), timing: ServerTurnTiming.optional() }),
+  z.strictObject({ ...envelope, type: z.literal("response.started"), responseId: z.string().max(160), timing: ServerTurnTiming.optional() }),
   z.strictObject({ ...envelope, type: z.literal("caption"), caption: Caption }),
   z.strictObject({ ...envelope, type: z.literal("caption.translation"), translation: CaptionTranslation }),
   z.strictObject({ ...envelope, type: z.literal("result"), result: IdentityResult }),
