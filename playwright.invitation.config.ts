@@ -9,7 +9,7 @@ export default defineConfig({
   testMatch: "invitation.spec.ts",
   testIgnore: [],
   outputDir: "artifacts/invitation-test-results",
-  use: { ...base.use, baseURL: `http://localhost:${port}` },
+  use: { ...base.use, baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
   webServer: {
     ...base.webServer,
     command: `pnpm --filter @nether/web audio:build && pnpm --filter @nether/web exec next dev --hostname localhost --port ${port}`,
