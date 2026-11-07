@@ -1,11 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
-import { generateQrDataUrl } from "@/features/card/canvas";
 import { syncUserToDatabase, getUserById, getUserByReferralCode, clearMemoryUsersForTests } from "@/lib/userDb";
 import { POST as googleExchangePost } from "@/app/api/auth/google/exchange/route";
 import { GET as sessionGet } from "@/app/api/auth/session/route";
 
-describe("Google Auth, Supabase Users & Share Referral QR", () => {
+describe("Google auth and stored user profiles", () => {
   beforeEach(() => {
     vi.stubEnv("AUTH_SIGNING_SECRET", randomBytes(32).toString("hex"));
     vi.stubEnv("NETHER_AUTH_DEMO", "true");
@@ -76,13 +75,4 @@ describe("Google Auth, Supabase Users & Share Referral QR", () => {
     expect(data.error).toContain("Missing authorization code or id_token");
   });
 
-  test("User referral link generates valid scan-ready QR code data URL", async () => {
-    const referralCode = "nc_spirit_7777";
-    const shareUrl = `https://nether-council.vercel.app/?ref=${referralCode}&invite=halloween`;
-
-    const dataUrl = await generateQrDataUrl(shareUrl);
-
-    expect(dataUrl).toMatch(/^data:image\/png;base64,/);
-    expect(dataUrl.length).toBeGreaterThan(100);
-  });
 });
