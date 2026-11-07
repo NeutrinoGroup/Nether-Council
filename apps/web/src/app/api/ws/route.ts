@@ -6,6 +6,7 @@ import { relayVoice } from "@/features/voice/server/relay";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+export const preferredRegion = "sin1";
 export async function GET(request: Request) {
   const config = serverConfig();
   if (!config.voiceEnabled || !config.realtimeKey) return Response.json({ error: "VOICE_DISABLED" }, { status: 503 });
