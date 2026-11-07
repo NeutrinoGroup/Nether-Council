@@ -240,12 +240,12 @@ export async function renderCardToCanvas(
   const qrY = 1055;
   const qrSize = 250;
 
-  try {
-    const qrDataUrl = await generateQrDataUrl(shareUrl || "https://nether-council.vercel.app");
+  {
+    const qrDataUrl = await generateQrDataUrl(shareUrl);
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
-      img.onerror = reject;
+      img.onerror = () => reject(new Error("CARD_QR_UNAVAILABLE"));
       img.src = qrDataUrl;
     });
 
@@ -253,12 +253,6 @@ export async function renderCardToCanvas(
     ctx.fillStyle = "#f8f3ea";
     ctx.fillRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24);
     ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
-  } catch {
-    ctx.fillStyle = "#26131c";
-    ctx.fillRect(qrX, qrY, qrSize, qrSize);
-    ctx.fillStyle = "#b5a4ab";
-    ctx.font = "16px system-ui";
-    ctx.fillText(locale === "zh" ? "二维码生成中" : "QR loading", qrX + qrSize / 2, qrY + qrSize / 2);
   }
 
   // Right side of QR code: explanation & call to action
