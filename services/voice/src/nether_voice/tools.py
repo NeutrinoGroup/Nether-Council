@@ -2,7 +2,7 @@
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 
 class Strict(BaseModel):
@@ -36,7 +36,17 @@ class FinishRitual(Strict):
     data: Blessing
 
 
-ACTION = TypeAdapter(Annotated[ChangeMood | ExtractWorry | FinishRitual, Field(discriminator="action")])
+class Farewell(Strict):
+    reason: Literal["user_goodbye", "ritual_complete", "user_request"] = "user_goodbye"
+    farewell: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+
+
+class EndConversation(Strict):
+    action: Literal["end_conversation"]
+    data: Farewell
+
+
+ACTION = TypeAdapter(Annotated[ChangeMood | ExtractWorry | FinishRitual | EndConversation, Field(discriminator="action")])
 
 
 def parse_tool(name: str, arguments: str) -> dict | None:
@@ -78,6 +88,19 @@ class ToolDispatcher:
             self.active = event.get("response", {}).get("id")
         elif kind == "input_audio_buffer.speech_started":
             self.observe_client({"type": "response.cancel"})
+        elif kind == "response.function_call_arguments.done" and event.get("name") == "end_conversation":
+            rid, cid = event.get("response_id"), event.get("call_id")
+            if not isinstance(rid, str) or rid != self.active or rid in self.canceled or not isinstance(cid, str) or not 0 < len(cid) <= 160 or cid in self.calls:
+                return [], [], True
+            if len(self.calls) >= 128:
+                raise ValueError("TOOL_LIMIT")
+            self.calls.add(cid)
+            if parse_tool("end_conversation", event.get("arguments", "")):
+                # The relay owns the trusted turn count and session ending flag.
+                # Forward validated calls for its guards; never acknowledge success here.
+                return [], [], False
+            self.continue_after.add(rid)
+            return [{"type": "gateway.tool_result", "response_id": rid, "call_id": cid}], [{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": cid, "output": json.dumps({"accepted": False, "error": "INVALID_TOOL_ARGUMENTS"})}}], True
         elif self.soul_mode:
             if kind == "response.done" and event.get("response", {}).get("id") == self.active:
                 self.active = None

@@ -10,6 +10,6 @@ export const sceneInstructions = "Use change_mood, extract_worry and finish_ritu
 
 // Only complete, validated arguments execute. Never evaluate fragments or provider-supplied code.
 export function parseTool(name: string, args: string): Action | undefined {
-  if (args.length > 2048) return;
+  if (args.length > 2048 || !["change_mood", "extract_worry", "finish_ritual", "end_conversation"].includes(name)) return;
   try { return UiAction.parse({ action: name, data: JSON.parse(args) }); } catch { return; }
 }

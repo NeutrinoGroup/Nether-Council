@@ -7,6 +7,7 @@ export const soulTools = [
 ].map(({ name, description, properties, required }) => ({ type: "function", function: { name, description, parameters: { type: "object", properties, required, additionalProperties: false } } }));
 
 export function parseSoulCall(name: string, args: string) {
+  if (args.length > 2048) return SoulAction.safeParse(null);
   try { return SoulAction.safeParse({ name, arguments: JSON.parse(args) }); }
   catch { return SoulAction.safeParse(null); }
 }

@@ -37,6 +37,30 @@ def test_cancelled_and_foreign_tools_never_mutate_ui():
     assert dispatcher.observe_provider({"type": "response.done", "response": {"id": "r1", "status": "completed"}})[1] == []
 
 
+@pytest.mark.parametrize("soul_mode", [False, True])
+def test_end_conversation_validation_and_relay_ownership(soul_mode):
+    dispatcher = ToolDispatcher(auto_continue=False)
+    dispatcher.soul_mode = soul_mode
+    dispatcher.observe_provider({"type": "response.created", "response": {"id": "end"}})
+    event = {"type": "response.function_call_arguments.done", "response_id": "end", "call_id": "valid", "name": "end_conversation", "arguments": '{"farewell":"  Good night.  "}'}
+    assert parse_tool("end_conversation", event["arguments"]) == {"action": "end_conversation", "data": {"reason": "user_goodbye", "farewell": "Good night."}}
+    # Validation does not claim that the guest spoke: only the relay can accept ending.
+    assert dispatcher.observe_provider(event) == ([], [], False)
+    assert dispatcher.observe_provider(event) == ([], [], True)
+    for index, data in enumerate([
+        {"reason": "invalid", "farewell": "Bye"}, {"farewell": " "},
+        {"farewell": 1}, {"farewell": "x" * 161}, {"farewell": "Bye", "extra": True},
+    ]):
+        arguments = json.dumps(data)
+        assert parse_tool("end_conversation", arguments) is None
+        commands, replies, consumed = dispatcher.observe_provider({**event, "call_id": f"invalid-{index}", "arguments": arguments})
+        assert consumed and commands[0]["type"] == "gateway.tool_result"
+        assert json.loads(replies[0]["item"]["output"]) == {"accepted": False, "error": "INVALID_TOOL_ARGUMENTS"}
+    dispatcher.observe_provider({"type": "input_audio_buffer.speech_started"})
+    assert dispatcher.observe_provider({**event, "call_id": "late"}) == ([], [], True)
+    assert dispatcher.observe_provider({**event, "call_id": "foreign", "response_id": "other"}) == ([], [], True)
+
+
 def test_meng_po_registry_preserves_raw_tools_for_edge_state_machine():
     dispatcher = ToolDispatcher(auto_continue=False)
     dispatcher.observe_client({"type": "session.update", "session": {"tools": [

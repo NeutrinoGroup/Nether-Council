@@ -37,6 +37,8 @@ export const UiAction = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("change_mood"), data: z.strictObject({ mood: z.enum(["calm", "warm", "storm", "laughing", "angry_support", "mystical", "healing"]) }) }),
   z.strictObject({ action: z.literal("extract_worry"), data: z.strictObject({ worry: z.string().min(1).max(160) }) }),
   z.strictObject({ action: z.literal("finish_ritual"), data: z.strictObject({ blessing: z.string().min(1).max(160) }) }),
+  z.strictObject({ action: z.literal("end_conversation"), data: z.strictObject({ reason: z.enum(["user_goodbye", "ritual_complete", "user_request"]).default("user_goodbye"), farewell: z.string().trim().min(1).max(160) }) }),
+  z.strictObject({ action: z.literal("web_search_status"), data: z.strictObject({ query: z.string().trim().min(1).max(120), status: z.enum(["searching", "completed", "fallback"]) }) }),
 ]);
 export type UiAction = z.infer<typeof UiAction>;
 export const SoulMood = z.enum(["laughing", "angry_support", "mystical", "healing"]);

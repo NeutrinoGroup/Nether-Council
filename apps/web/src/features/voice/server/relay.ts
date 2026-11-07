@@ -1,11 +1,12 @@
-import { parseTool, sceneTools, sceneInstructions } from "./tools";
+import { parseTool, sceneInstructions } from "./tools";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
 import { UiAction, parseClientMessage, type CharacterId, type Locale, type Caption, type ConfirmedTurn, type Session, type ServerMessage, type ServerTurnTiming } from "@nether/contracts";
 import { recordTurn, encounterProgress, getCharacter } from "@nether/party-core";
 import { characterPrompt, openingPrompt } from "./prompt";
-import { parseSoulCall, soulStageInstruction, soulTools } from "./soul-tools";
+import { parseSoulCall, soulStageInstruction } from "./soul-tools";
+import { endConversation, parseSearchQuery, searchWeb, sessionToolInstructions, toolsForCharacter, type WebSearch } from "./tool-registry";
 import { TranslationQueue, createTranslator } from "../../captions/server/translation-queue";
 import type { TextConfig } from "../../../shared/server/text";
 import { generateIdentity } from "../../verdict/server/generator";
@@ -25,7 +26,7 @@ const Upstream = z.looseObject({
   error: z.looseObject({ code: z.string().optional(), type: z.string().optional(), param: z.string().optional(), message: z.string().max(2000).optional() }).optional(),
 });
 
-type Config = { gatewayUrl?: string; gatewaySecret?: string; realtimeKey: string; realtimeUrl: string; realtimeModel: string; text?: TextConfig };
+type Config = { gatewayUrl?: string; gatewaySecret?: string; realtimeKey: string; realtimeUrl: string; realtimeModel: string; text?: TextConfig; webSearch?: WebSearch };
 type Outgoing = ServerMessage extends infer T ? T extends ServerMessage ? Omit<T, "protocolVersion" | "eventId" | "sessionId" | "epoch" | "seq"> : never : never;
 
 export function getVadConfig(characterId: CharacterId, locale: Locale) {
@@ -54,12 +55,15 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let resumeTurnsState: { role: "user" | "assistant"; text: string }[] = [];
     let lastSentInstructions = "";
     let userTurnCount = 0, ritualCompleted = false, toolContinuations = 0;
+    const sessionTools = { conversationEnded: false, searchCount: 0 };
+    const pendingSearches = new Map<string, Set<AbortController>>();
+    const pendingDone = new Map<string, { id: string; status?: string }>();
     const userItems = new Set<string>();
     const toolCalls = new Set<string>();
     const responsesWithTools = new Set<string>();
     const responsesWithAudio = new Set<string>();
     const isMengPo = session.characterId === "meng-po";
-    const instructions = () => `${characterPrompt(session.characterId, session.locale)}${isMengPo ? "" : `\n${sceneInstructions}`}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
+    const instructions = () => `${characterPrompt(session.characterId, session.locale)}${isMengPo ? "" : `\n${sceneInstructions}`}\n${sessionToolInstructions}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
     const generation = new AbortController();
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -85,12 +89,17 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       upstreamSend({ type: "session.update", session: { instructions: next } });
       lastSentInstructions = next;
     };
-    const cancel = () => { if (activeResponse) { canceled.add(activeResponse); translations.invalidate("character"); activeResponse = undefined; pendingCancelErrors++; upstreamSend({ type: "response.cancel" }); } };
+    const cancelSearches = (responseId: string) => {
+      for (const controller of pendingSearches.get(responseId) ?? []) controller.abort();
+      pendingSearches.delete(responseId); pendingDone.delete(responseId);
+    };
+    const cancel = () => { if (activeResponse) { canceled.add(activeResponse); cancelSearches(activeResponse); translations.invalidate("character"); activeResponse = undefined; pendingCancelErrors++; upstreamSend({ type: "response.cancel" }); } };
 
     function shutdown(code = 1000, reason = "Session ended") {
       if (closed) return;
       closed = true;
       generation.abort();
+      for (const responseId of pendingSearches.keys()) cancelSearches(responseId);
       translations.dispose();
       clearTimeout(startTimer);
       clearTimeout(expiryTimer);
@@ -224,6 +233,36 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
       upstreamSend({ type: "response.create" });
     };
 
+    function finishResponse(response: { id: string; status?: string }) {
+      if (closed || canceled.has(response.id) || response.id !== activeResponse) return;
+      if (response.status === "cancelled" || response.status === "failed") cancelSearches(response.id);
+      if (pendingSearches.get(response.id)?.size) {
+        pendingDone.set(response.id, response);
+        return;
+      }
+      const text = captions.get(response.id);
+      if (text) {
+        const charCaption: Caption = { sessionId: session.id, epoch, responseId: response.id, segmentId: response.id, revision: text.length + 1, speaker: "character", sourceLocale: session.locale, sourceText: text, final: true };
+        confirmedTurns = recordTurn(confirmedTurns, charCaption);
+        emitCaption(charCaption);
+      }
+      // Tool-only generations need one continuation after ALL calls finish, never one per call.
+      const continueSpeech = responsesWithTools.has(response.id) && (!responsesWithAudio.has(response.id) || canonicalResponses.has(response.id)) && toolContinuations < 4 && response.status !== "cancelled" && response.status !== "failed";
+      if (!continueSpeech) send({ type: "response.done", responseId: response.id, ...(Object.keys(responseTiming).length ? { timing: responseTiming } : {}) });
+      captions.delete(response.id);
+      responsesWithTools.delete(response.id); responsesWithAudio.delete(response.id);
+      if (activeResponse === response.id) activeResponse = undefined;
+      if (continueSpeech) {
+        toolContinuations++;
+        syncInstructions();
+        continuationStartedAt = performance.now();
+        upstreamSend({ type: "response.create" });
+      } else {
+        turnStoppedAt = lastVadSpeechMs = continuationStartedAt = undefined;
+      }
+      canonicalResponses.delete(response.id);
+    }
+
     const openUpstream = () => {
       upstreamOpenStartedAt = performance.now();
       // Allow session configuration to finish after a slow 25s WebSocket handshake.
@@ -254,7 +293,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
               modalities: ["text", "audio"],
               voice: charMeta.voice,
               instructions: lastSentInstructions,
-              tools: isMengPo ? soulTools : sceneTools,
+              tools: toolsForCharacter(session.characterId),
               input_audio_format: "pcm",
               output_audio_format: "pcm",
               input_audio_transcription: { language: session.locale },
@@ -289,6 +328,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
             upstreamSend({ type: "response.cancel" });
             return;
           }
+          if (activeResponse && activeResponse !== event.response.id) cancelSearches(activeResponse);
           activeResponse = event.response.id;
           responseTurnStoppedAt = turnStoppedAt;
           responseContinuationStartedAt = continuationStartedAt;
@@ -299,6 +339,40 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           };
           translations.invalidate("character");
           send({ type: "response.started", responseId: event.response.id, ...(Object.keys(responseTiming).length ? { timing: responseTiming } : {}) });
+        } else if (event.type === "response.function_call_arguments.done" && event.response_id && event.call_id && (event.name === "end_conversation" || event.name === "web_search")) {
+          if (toolCalls.has(event.call_id)) return;
+          if (toolCalls.size >= 128) return fail("RATE_LIMITED");
+          toolCalls.add(event.call_id);
+          const responseId = event.response_id, callId = event.call_id;
+          responsesWithTools.add(responseId);
+          const output = (value: object) => upstreamSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(value) } });
+          if (event.name === "end_conversation") {
+            const result = endConversation(event.arguments ?? "", userTurnCount, sessionTools);
+            if (result.action) send({ type: "UI_ACTION", responseId, callId, payload: result.action });
+            output(result.output);
+          } else {
+            canonicalResponses.add(responseId);
+            const query = parseSearchQuery(event.arguments ?? "");
+            const status = (value: "searching" | "completed" | "fallback") => {
+              if (query) send({ type: "UI_ACTION", responseId, callId, payload: { action: "web_search_status", data: { query, status: value } } });
+            };
+            status("searching");
+            const controller = new AbortController();
+            const pending = pendingSearches.get(responseId) ?? new Set<AbortController>();
+            pending.add(controller); pendingSearches.set(responseId, pending);
+            void searchWeb(query, sessionTools, config.webSearch, controller.signal).then(result => {
+              if (closed || canceled.has(responseId) || activeResponse !== responseId) return;
+              status(result.ok ? "completed" : "fallback");
+              output(result);
+            }).finally(() => {
+              pending.delete(controller);
+              if (pending.size || pendingSearches.get(responseId) !== pending) return;
+              pendingSearches.delete(responseId);
+              const done = pendingDone.get(responseId);
+              pendingDone.delete(responseId);
+              if (done) finishResponse(done);
+            });
+          }
         } else if (event.type === "gateway.tool_result" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && !canceled.has(event.response_id)) {
           toolCalls.add(event.call_id); responsesWithTools.add(event.response_id); canonicalResponses.add(event.response_id);
         } else if (event.type === "UI_ACTION" && config.gatewayUrl && event.response_id && event.response_id === activeResponse && event.call_id && event.payload && !canceled.has(event.response_id)) {
@@ -354,27 +428,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           }
           emitCaption(userCaption);
         } else if (event.type === "response.done" && event.response && !canceled.has(event.response.id) && event.response.id === activeResponse) {
-          const text = captions.get(event.response.id);
-          if (text) {
-            const charCaption: Caption = { sessionId: session.id, epoch, responseId: event.response.id, segmentId: event.response.id, revision: text.length + 1, speaker: "character", sourceLocale: session.locale, sourceText: text, final: true };
-            confirmedTurns = recordTurn(confirmedTurns, charCaption);
-            emitCaption(charCaption);
-          }
-          // Tool-only generations need one continuation after ALL calls finish, never one per call.
-          const continueSpeech = responsesWithTools.has(event.response.id) && (!responsesWithAudio.has(event.response.id) || canonicalResponses.has(event.response.id)) && toolContinuations < 4 && event.response.status !== "cancelled" && event.response.status !== "failed";
-          if (!continueSpeech) send({ type: "response.done", responseId: event.response.id, ...(Object.keys(responseTiming).length ? { timing: responseTiming } : {}) });
-          captions.delete(event.response.id);
-          responsesWithTools.delete(event.response.id); responsesWithAudio.delete(event.response.id);
-          if (activeResponse === event.response.id) activeResponse = undefined;
-          if (continueSpeech) {
-            toolContinuations++;
-            syncInstructions();
-            continuationStartedAt = performance.now();
-            upstreamSend({ type: "response.create" });
-          } else {
-            turnStoppedAt = lastVadSpeechMs = continuationStartedAt = undefined;
-          }
-          canonicalResponses.delete(event.response.id);
+          finishResponse(event.response);
         } else if (event.type === "error") {
           const noActiveResponse = event.error?.code === "response_cancel_not_active" || (event.error?.code === "invalid_value" && event.error.type === "invalid_request_error" && event.error.param === "response.cancel" && event.error.message === "Conversation has no active response.");
           if (pendingCancelErrors > 0 && noActiveResponse) pendingCancelErrors--;
