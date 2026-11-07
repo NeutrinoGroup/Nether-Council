@@ -19,6 +19,7 @@ beforeEach(() => {
   const now = Date.now(); session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   vi.stubGlobal("location", { protocol: "https:", host: "example.test" }); vi.stubGlobal("WebSocket", Socket);
   vi.stubGlobal("sessionStorage", { getItem: vi.fn(() => null), setItem: vi.fn() });
+  vi.stubGlobal("localStorage", undefined);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ session }) })));
 });
 afterEach(() => { current?.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -185,4 +186,63 @@ test("buffered playback does not trigger a network downgrade before manual inter
   expect(socket.sent.filter(e => e.type === "response.cancel")).toEqual([expect.objectContaining({ responseId: "buffered" })]);
   expect(view).toMatchObject({ phase: "listening" });
   audio.isPlaying.mockReturnValue(false);
+});
+
+
+function telemetryEvents() {
+  return vi.mocked(fetch).mock.calls
+    .filter(([url]) => url === "/api/events")
+    .map(([, init]) => JSON.parse(String(init?.body)) as { name: string; sessionId: string });
+}
+
+test("conversation_started requires the first confirmed user story and survives duplicate events and reconnect", async () => {
+  current = new VoiceClient(() => {});
+  await current.start("en", "fixture");
+  let seq = 0;
+  const send = (payload: object, socket = Socket.instances[0], epoch = 0) => socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch, seq: seq++, ...payload }) });
+  send({ type: "session.ready", session });
+  expect(telemetryEvents()).toEqual([]);
+  const caption: Caption = { sessionId: id, epoch: 0, responseId: "story", segmentId: "story", revision: 1, sourceLocale: "en", sourceText: "I had five meetings and did no work.", speaker: "user", final: false };
+  send({ type: "caption", caption });
+  send({ type: "caption", caption: { ...caption, segmentId: "ack", sourceText: "Okay", final: true } });
+  send({ type: "caption", caption: { ...caption, segmentId: "opening", speaker: "character", final: true } });
+  expect(telemetryEvents()).toEqual([]);
+  send({ type: "caption", caption: { ...caption, revision: 2, final: true } });
+  send({ type: "caption", caption: { ...caption, revision: 2, final: true } });
+  send({ type: "caption", caption: { ...caption, revision: 3, final: true } });
+  expect(telemetryEvents()).toEqual([expect.objectContaining({ name: "conversation_started", sessionId: id })]);
+  Socket.instances[0].onclose?.({ code: 1011 });
+  await vi.advanceTimersByTimeAsync(1500);
+  const next = Socket.instances[1];
+  send({ type: "session.ready", session }, next, 1);
+  send({ type: "caption", caption: { ...caption, epoch: 1, revision: 4, final: true } }, next, 1);
+  expect(telemetryEvents()).toHaveLength(1);
+});
+
+test("prewarm and demo text cannot count as a conversation start", async () => {
+  current = new VoiceClient(() => {});
+  await current.prewarm("en", "fixture");
+  const socket = Socket.instances[0];
+  socket.onmessage?.({ data: JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: 0, type: "session.ready", session }) });
+  current.enterDemo("MANUAL", "en");
+  current.submitText("I had five meetings and did no work.");
+  expect(telemetryEvents()).toEqual([]);
+});
+
+test.each(["start", "prewarm"] as const)("%s admission includes the persisted anonymous visitor identity", async method => {
+  const visitorId = "12345678-1234-4234-8234-123456789abc";
+  vi.stubGlobal("localStorage", { getItem: vi.fn(() => visitorId), setItem: vi.fn() });
+  current = new VoiceClient(() => {});
+  await current[method]("en", "fixture");
+  const request = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/sessions");
+  expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ visitorId });
+});
+
+test("unavailable local storage omits the visitor identity without blocking admission", async () => {
+  vi.stubGlobal("localStorage", { getItem: vi.fn(() => { throw new DOMException("blocked", "SecurityError"); }) });
+  current = new VoiceClient(() => {});
+  await current.start("en", "fixture");
+  const request = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/sessions");
+  expect(JSON.parse(String(request?.[1]?.body))).not.toHaveProperty("visitorId");
+  expect(Socket.instances).toHaveLength(1);
 });

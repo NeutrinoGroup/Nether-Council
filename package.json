@@ -28,6 +28,7 @@
     "assets:prepare:meng-po": "tsx scripts/prepare-meng-po.ts",
     "dev:gateway": "tsx scripts/dev-gateway.ts",
     "verify:voice-gateway": "tsx scripts/verify-voice-gateway.ts",
+    "verify:telemetry-bridge": "tsx --tsconfig apps/web/tsconfig.json scripts/verify-telemetry-bridge.ts",
     "test:voice": "uv run --project services/voice --frozen pytest services/voice/tests -q",
     "test:e2e:realtime": "playwright test --config playwright.realtime.config.ts"
   },

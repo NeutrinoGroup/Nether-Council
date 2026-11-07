@@ -14,6 +14,10 @@ EVENT_TYPES = frozenset({
     "referred_conversation_started", "connection_error", "latency",
 })
 METRICS = frozenset({"connect_ms", "first_audio_ms", "stop_ms", "translation_ms", "result_ms"})
+CHARACTER_IDS = frozenset({
+    "hei-wuchang", "bai-wuchang", "zhong-kui", "meng-po",
+    "frankenstein", "werewolf", "vampire",
+})
 
 
 @dataclass(frozen=True)
@@ -47,13 +51,34 @@ def parse_event(payload: dict) -> IngestEvent | None:
         event_id = UUID(str(payload["eventId"]))
         session_id = UUID(str(payload["sessionId"]))
         event_type = str(payload["name"])
+        campaign_id = payload["campaignId"]
+        character_id = payload["characterId"]
+        locale = payload["locale"]
+        mode = payload.get("mode", "personal")
+        if not isinstance(campaign_id, str) or not 1 <= len(campaign_id) <= 80:
+            raise ValueError("invalid campaign")
+        if not isinstance(character_id, str) or character_id not in CHARACTER_IDS:
+            raise ValueError("invalid character")
+        if not isinstance(locale, str) or locale not in {"zh", "en"}:
+            raise ValueError("invalid locale")
+        if not isinstance(mode, str) or mode not in {"personal", "host"}:
+            raise ValueError("invalid mode")
+        visitor_id = None
+        if "visitorId" in payload:
+            raw_visitor_id = payload["visitorId"]
+            if not isinstance(raw_visitor_id, str):
+                raise ValueError("invalid visitor")
+            visitor_id = UUID(raw_visitor_id)
+            if str(visitor_id) != raw_visitor_id.lower():
+                raise ValueError("invalid visitor")
         call = Call(
             id=session_id,
-            campaign_id=str(payload["campaignId"]),
-            character_id=str(payload["characterId"]),
-            locale=str(payload["locale"]),
-            mode=str(payload.get("mode", "personal")),
+            campaign_id=campaign_id,
+            character_id=character_id,
+            locale=locale,
+            mode=mode,
             source_session_id=UUID(str(payload["sourceSessionId"])) if payload.get("sourceSessionId") else None,
+            visitor_id=visitor_id,
         )
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise ValueError("invalid event identity") from exc

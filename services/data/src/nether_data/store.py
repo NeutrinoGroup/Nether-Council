@@ -21,6 +21,7 @@ class Call:
     locale: str
     mode: str = "personal"
     source_session_id: UUID | None = None
+    visitor_id: UUID | None = None
 
 
 class Store:
@@ -45,6 +46,10 @@ class Store:
         payload = {"call_id": str(call.id), "campaign_id": call.campaign_id,
                    "character_id": call.character_id, "locale": call.locale,
                    "mode": call.mode, "event_type": event_type}
+        if call.visitor_id is not None:
+            payload["visitor_id"] = str(call.visitor_id)
+        if call.source_session_id is not None:
+            payload["source_session_id"] = str(call.source_session_id)
         if metric:
             payload.update(metric=metric, value=value)
         with self.connect() as conn, conn.transaction():

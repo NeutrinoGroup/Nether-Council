@@ -1,7 +1,8 @@
 import { ServerMessage, Session, EncounterDraft, IdentityResult, type UiAction, type CharacterId, type ConfirmedTurn, type Locale, type SoulMood } from "@nether/contracts";
-import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
+import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, isStoryText, normalizeNickname, recordTurn, type DisplayCaption } from "@nether/party-core";
 import { demoAction, demoAudio, demoLines } from "./demo";
 import { AudioEngine } from "./audio/engine";
+import { getVisitorId } from "../analytics/visitor";
 export type SoulSoupView = { mood: SoulMood; worries: string[]; ritual?: { callId: string; blessing: string } };
 export type VoiceView = { soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
 export const idleView: VoiceView = { phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
@@ -25,6 +26,7 @@ export class VoiceClient {
   private nickname = "";
   private progressTimer?: ReturnType<typeof setInterval>;
   private startedAt = 0;
+  private conversationStarted = false;
   private result?: IdentityResult;
   private finishTimer?: ReturnType<typeof setTimeout>;
   private finishReason: "claim" | "time_limit" = "claim";
@@ -134,6 +136,7 @@ export class VoiceClient {
           locale,
           invite,
           mode,
+          visitorId: getVisitorId(),
           ...(ref ? { ref } : {}),
         }),
       });
@@ -215,6 +218,7 @@ export class VoiceClient {
           locale,
           invite,
           mode,
+          visitorId: getVisitorId(),
           ...(hostCredential ? { hostCredential } : {}),
           ...(ref ? { ref } : {}),
         }),
@@ -280,7 +284,6 @@ export class VoiceClient {
         }
         if (!this.isPrewarming) {
           this.update({ phase: "listening", connectMs: Math.round(performance.now() - this.startedAt) });
-          this.telemetry("conversation_started");
         }
       } else if (event.type === "pong") {
         clearTimeout(this.heartbeatDeadline); this.heartbeatDeadline = undefined;
@@ -322,6 +325,10 @@ export class VoiceClient {
         const display = { ...caption, translationStatus: caption.final ? "pending" as const : undefined };
         this.update(caption.speaker === "user" ? { userCaption: display } : { caption: display });
         this.refreshProgress();
+        if (!this.conversationStarted && !this.isPrewarming && caption.final && caption.speaker === "user" && isStoryText(caption.sourceText) && this.view.canClaim) {
+          this.conversationStarted = true;
+          this.telemetry("conversation_started");
+        }
       } else if (event.type === "caption.translation") {
         const translation = event.translation;
         if (this.canceled.has(translation.responseId)) return;

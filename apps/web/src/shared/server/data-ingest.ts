@@ -1,14 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { TelemetryEvent } from "@nether/contracts";
 
-type VerifiedTelemetry = TelemetryEvent & {
-  sessionId?: string;
-  characterId?: string;
-  locale?: "zh" | "en";
-  sourceSessionId?: string;
-};
-
-export async function forwardTelemetryEvent(event: VerifiedTelemetry): Promise<void> {
+export async function forwardTelemetryEvent(event: TelemetryEvent): Promise<void> {
   const endpoint = process.env.NETHER_DATA_INGEST_URL;
   const secret = process.env.NETHER_DATA_INGEST_SECRET;
   if (!endpoint || !secret) return;

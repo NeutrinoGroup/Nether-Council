@@ -88,10 +88,6 @@ export function IdentityCard({
           context.drawImage(snapshot, 0, 0);
           setPrepared({ options, blob });
           setRendering(false);
-          if (!renderedOnce.current) {
-            renderedOnce.current = true;
-            void emitTelemetry("card_rendered", result.sessionId);
-          }
         }
       } catch {
         if (active) { setRendering(false); setRenderError(true); }
@@ -102,6 +98,23 @@ export function IdentityCard({
       active = false;
     };
   }, [options, result.sessionId, shareUrl, retry]);
+
+  useEffect(() => {
+    if (!canDownload || renderedOnce.current) return;
+    let afterPaint = 0;
+    // Wait until React reveals the prepared canvas and the browser has had a
+    // frame to display it. Encoding alone is not a completed card preview.
+    const frame = requestAnimationFrame(() => {
+      afterPaint = requestAnimationFrame(() => {
+        const preview = canvasRef.current;
+        if (!preview || preview.hidden || renderedOnce.current) return;
+        renderedOnce.current = true;
+        void emitTelemetry("card_rendered", result.sessionId);
+        if (!result.fallback) void emitTelemetry("conversation_completed", result.sessionId);
+      });
+    });
+    return () => { cancelAnimationFrame(frame); cancelAnimationFrame(afterPaint); };
+  }, [canDownload, result.sessionId, result.fallback]);
 
   const handleDownload = () => {
     if (!canDownload || !prepared) return;
@@ -251,7 +264,7 @@ export function IdentityCard({
   );
 }
 
-async function emitTelemetry(name: "card_rendered" | "card_download_clicked" | "card_download_created" | "share_invoked" | "invite_copied", sessionId?: string) {
+async function emitTelemetry(name: "card_rendered" | "conversation_completed" | "card_download_clicked" | "card_download_created" | "share_invoked" | "invite_copied", sessionId?: string) {
   try {
     await fetch("/api/events", {
       method: "POST",

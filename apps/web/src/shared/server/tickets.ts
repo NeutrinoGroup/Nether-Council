@@ -4,7 +4,7 @@ import { Session } from "@nether/contracts";
 const Expiring = { issuedAt: z.number().int().nonnegative(), expiresAt: z.number().int().nonnegative() };
 export const CampaignClaims = z.strictObject({ kind: z.literal("campaign"), campaignId: z.string().min(1).max(80), ...Expiring });
 export const ReferralClaims = z.strictObject({ kind: z.literal("referral"), campaignId: z.string().min(1).max(80), sourceSessionId: z.uuid(), ...Expiring });
-export const SessionClaims = z.strictObject({ kind: z.literal("session"), session: Session, campaign: CampaignClaims, sourceSessionId: z.uuid().optional(), ...Expiring });
+export const SessionClaims = z.strictObject({ kind: z.literal("session"), session: Session, campaign: CampaignClaims, sourceSessionId: z.uuid().optional(), visitorId: z.uuid().optional(), ...Expiring });
 export type SessionClaims = z.infer<typeof SessionClaims>;
 function digest(payload: string, secret: string) {
   if (secret.length < 32) throw new Error("SIGNING_SECRET_MISSING");

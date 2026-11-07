@@ -1,6 +1,7 @@
 """Integration tests against an isolated, real PostgreSQL database (not SQLite)."""
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ import psycopg
 import pytest
 from psycopg import sql
 
+from nether_data.ingest import ingest, parse_event
 from nether_data.store import Call, Store
 
 
@@ -171,3 +173,43 @@ def test_reused_event_key_cannot_create_another_call(store):
         store.record(new_call(), key, "conversation_started")
     with store.connect() as conn:
         assert conn.execute("select count(*) as n from nether.calls").fetchone()["n"] == 1
+
+
+def test_referral_payload_is_whitelisted_and_duplicate_identity_is_stable(store):
+    event_id, session_id, visitor_id, source_session_id = (uuid4() for _ in range(4))
+    parsed = parse_event({
+        "eventId": str(event_id), "sessionId": str(session_id),
+        "name": "card_download_created", "campaignId": "halloween-2026",
+        "characterId": "meng-po", "locale": "zh", "mode": "personal",
+        "visitorId": str(visitor_id), "sourceSessionId": str(source_session_id),
+        "transcript": "private story", "nickname": "private nickname", "audio": "private audio",
+    })
+    assert parsed is not None
+    assert ingest(store, parsed)
+    assert not ingest(store, parsed)
+    changed_visitor = replace(parsed, call=replace(parsed.call, visitor_id=uuid4()))
+    with pytest.raises(ValueError, match="event key collision"):
+        ingest(store, changed_visitor)
+    changed_source = replace(parsed, call=replace(parsed.call, source_session_id=uuid4()))
+    with pytest.raises(ValueError, match="call identity mismatch"):
+        ingest(store, changed_source)
+    with store.connect() as conn:
+        rows = conn.execute("select payload from nether.outbox").fetchall()
+        assert rows == [{"payload": {
+            "call_id": str(session_id), "campaign_id": "halloween-2026",
+            "character_id": "meng-po", "locale": "zh", "mode": "personal",
+            "event_type": "card_download_created", "visitor_id": str(visitor_id),
+            "source_session_id": str(source_session_id),
+        }}]
+        call = conn.execute("select card_save_count,revision from nether.calls where id=%s", (session_id,)).fetchone()
+        assert call == {"card_save_count": 1, "revision": 1}
+
+
+def test_legacy_payload_without_visitor_or_referral_remains_accepted(store):
+    call = new_call()
+    key = uuid4()
+    assert store.record(call, key, "conversation_started")
+    assert not store.record(call, key, "conversation_started")
+    with store.connect() as conn:
+        payload = conn.execute("select payload from nether.outbox where event_key=%s", (key,)).fetchone()["payload"]
+        assert set(payload) == {"call_id", "campaign_id", "character_id", "locale", "mode", "event_type"}

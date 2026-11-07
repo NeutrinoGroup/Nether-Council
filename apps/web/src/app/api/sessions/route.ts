@@ -4,7 +4,7 @@ import { CharacterId, Locale } from "@nether/contracts";
 import { serverConfig } from "@/shared/server/config";
 import { CampaignClaims, ReferralClaims, sameOrigin, signTicket, verifyTicket } from "@/shared/server/tickets";
 export const runtime = "nodejs";
-const Input = z.strictObject({ locale: Locale, characterId: CharacterId.default("meng-po"), mode: z.enum(["personal", "host"]).default("personal"), invite: z.string().max(4096), ref: z.string().max(4096).optional(), hostCredential: z.string().max(256).optional() });
+const Input = z.strictObject({ locale: Locale, characterId: CharacterId.default("meng-po"), mode: z.enum(["personal", "host"]).default("personal"), invite: z.string().max(4096), ref: z.string().max(4096).optional(), hostCredential: z.string().max(256).optional(), visitorId: z.uuid().optional() });
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   if (Number(request.headers.get("content-length") ?? 0) > 10000) return new Response(null, { status: 413 });
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const referral = input.ref ? verifyTicket(input.ref, config.referralSecret, ReferralClaims, now) : undefined;
   const sourceSessionId = referral?.campaignId === campaign.campaignId ? referral.sourceSessionId : undefined;
   const session = { id: randomUUID(), characterId: input.characterId, locale: input.locale, mode: input.mode, createdAt: now, captureUntil: now + 180_000, expiresAt: now + 235_000 };
-  const ticket = signTicket({ kind: "session", session, campaign, ...(sourceSessionId ? { sourceSessionId } : {}), issuedAt: now, expiresAt: session.expiresAt }, config.sessionSecret);
+  const ticket = signTicket({ kind: "session", session, campaign, sourceSessionId, visitorId: input.visitorId, issuedAt: now, expiresAt: session.expiresAt }, config.sessionSecret);
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return Response.json({ session }, { headers: { "Cache-Control": "no-store", "Set-Cookie": `nc_session=${ticket}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=235${secure}` } });
 }

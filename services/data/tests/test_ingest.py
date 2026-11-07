@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from dataclasses import asdict
 from uuid import uuid4
 
 import pytest
@@ -49,3 +50,60 @@ def test_parse_event_whitelists_identity_and_metric():
 def test_parse_event_rejects_untrusted_or_unsupported_fields(payload):
     with pytest.raises(ValueError):
         parse_event(payload)
+
+
+@pytest.mark.parametrize("extra", [
+    {"campaignId": ""},
+    {"campaignId": "x" * 81},
+    {"campaignId": 2026},
+    {"campaignId": None},
+    {"characterId": "unknown"},
+    {"characterId": ["meng-po"]},
+    {"locale": "fr"},
+    {"locale": None},
+    {"mode": "public"},
+    {"mode": ["personal"]},
+    {"visitorId": "not-a-uuid"},
+    {"visitorId": ""},
+    {"visitorId": None},
+    {"visitorId": True},
+    {"visitorId": uuid4().hex},
+])
+def test_parse_event_rejects_invalid_signed_identity(extra):
+    with pytest.raises(ValueError, match="identity"):
+        parse_event(event(**extra))
+
+
+def test_parse_event_keeps_optional_referral_identity_without_private_fields():
+    visitor_id, source_session_id = uuid4(), uuid4()
+    parsed = parse_event(event(
+        visitorId=str(visitor_id), sourceSessionId=str(source_session_id),
+        transcript="private story", nickname="private nickname", audio="private audio",
+    ))
+    assert parsed is not None
+    assert parsed.call.visitor_id == visitor_id
+    assert parsed.call.source_session_id == source_session_id
+    assert set(asdict(parsed.call)) == {
+        "id", "campaign_id", "character_id", "locale", "mode",
+        "source_session_id", "visitor_id",
+    }
+    assert set(asdict(parsed)) == {"event_id", "event_type", "call", "metric", "value"}
+
+
+def test_parse_event_accepts_legacy_events_without_visitor_and_default_mode():
+    payload = event(campaignId="x" * 80, characterId="vampire", locale="en")
+    del payload["mode"]
+    parsed = parse_event(payload)
+    assert parsed is not None
+    assert parsed.call.visitor_id is None
+    assert parsed.call.source_session_id is None
+    assert parsed.call.mode == "personal"
+
+
+@pytest.mark.parametrize("character_id", [
+    "hei-wuchang", "bai-wuchang", "zhong-kui", "meng-po",
+    "frankenstein", "werewolf", "vampire",
+])
+def test_parse_event_accepts_each_supported_character(character_id):
+    parsed = parse_event(event(characterId=character_id, locale="en", mode="host"))
+    assert parsed is not None and parsed.call.character_id == character_id
