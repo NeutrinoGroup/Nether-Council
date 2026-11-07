@@ -16,7 +16,13 @@ for (const variant of ["stage", "immersive"] as const) {
         return stream.stream;
       };
     });
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+    // The model has separate full-encounter coverage. Use its supported fallback
+    // here so software 3D rendering cannot starve the 900 ms interruption check.
+    await page.route("**/models/meng-po.glb*", route => route.fulfill({ status: 503, body: "Waveform fixture: model unavailable" }));
+    const errors: string[] = [];
+    page.on("pageerror", error => {
+      if (!error.message.includes("Could not load /models/meng-po.glb")) errors.push(error.message);
+    });
     const id = "11111111-1111-4111-8111-111111111111", now = Date.now();
     const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
     let socket: WebSocketRoute, seq = 0;
