@@ -25,6 +25,7 @@ pnpm test:e2e
 
 - **个人体验入口 (`/play`)**：开放全部 7 位角色（孟婆、黑无常、白无常、钟馗、科学怪人、狼人、吸血鬼）与中英双语选择。支持 AudioWorklet 采集、流式双工问答、即时插话（Barge-in）、双语异步字幕与 1080×1440 万圣节身份卡结算导出（PNG 下载、Web Share、免手填码推荐二维码）。
 - **现场主持大屏 (`/host`)**：现场专属大屏沉浸模式，支持 32px 超大双语字幕、Web Audio 背景音智能避让压低（~15.5dB Ducking）、全场举杯狂欢祝词（All-Hall Celebration）、一键流转下一位来宾（无串线状态重置）及现场常驻扫码二维码。
+- **Google OAuth 身份与分享通行码**：使用项目独立 Google OAuth 2.0 Web 客户端（`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`），在 Google Cloud Console 将站点根 Origin（`https://ghost.oodai.space`、`https://nether-council.vercel.app`、`http://localhost:3100`）配置为已获授权的 JavaScript 来源与重定向 URI。服务端通过 PKCE（`S256`）换取授权码并签发 HMAC-SHA256 `HttpOnly` 身份凭证（`nc_identity`），即使未配置可选外部 Supabase，Serverless 跨实例与冷启动仍能稳定恢复会话与专属推荐码（`nc_<sha256>`）。
 
 详见以下核心文档：
 - [完整部署与运维手册](docs/deploy.md)
@@ -40,9 +41,9 @@ pnpm test:e2e
 ```bash
 pnpm env:vercel
 pnpm exec vercel deploy --prod --regions hkg1 --local-config apps/web/vercel.json --scope oodai --non-interactive --yes
-pnpm smoke --url https://nether-council.vercel.app
-pnpm test:load --real-provider --clients 10 --turns 3 --duration 120 --url https://nether-council.vercel.app
-pnpm invite:create --url https://nether-council.vercel.app --hours 2
+pnpm smoke --url https://ghost.oodai.space
+pnpm test:load --real-provider --clients 10 --turns 3 --duration 120 --url https://ghost.oodai.space
+pnpm invite:create --url https://ghost.oodai.space --hours 2
 ```
 
 `env:vercel` 校验本项目 ID 后从本机配置经 stdin 上传环境变量，不打印值；可追加变量名只更新所选项。默认关闭语音，开启时必须保留签名活动邀请鉴权。项目 Git 自动部署尚未接通，现由已登录的 CLI 上传。`probe:relay` 只验证自动开场的真实音频和取消链路，不能替代真人双工验收。

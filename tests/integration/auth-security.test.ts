@@ -58,8 +58,25 @@ test("tampered session is rejected and logout clears browser cookie", async () =
   const logout = DELETE(new Request(`${origin}/api/auth/session`, { method: "DELETE", headers: { origin } }));
   expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
 });
-test("missing database never silently persists production user", async () => {
+test("production OAuth exchange succeeds without optional Supabase and survives serverless cold start", async () => {
   vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("SUPABASE_URL", ""); vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+  const flow = createGoogleFlow(origin);
+  const fetch = vi.fn().mockResolvedValueOnce(Response.json({ access_token: "test-access" })).mockResolvedValueOnce(Response.json({ sub: "998877", email: "oodaleek@gmail.com", email_verified: true, name: "Alexander", picture: "https://lh3.googleusercontent.com/a/avatar" }));
+  vi.stubGlobal("fetch", fetch);
+  const result = await exchange({ code: "test-code", state: flow.state }, `${FLOW_COOKIE}=${flow.token}`);
+  expect(result.status).toBe(200);
+  const token = result.headers.get("set-cookie")!.match(/nc_identity=([^;]+)/)![1];
+  clearMemoryUsersForTests();
+  const session = await GET(new Request(`${origin}/api/auth/session`, { headers: { cookie: `${AUTH_COOKIE}=${token}` } }));
+  expect(session.status).toBe(200);
+  const body = await session.json();
+  expect(body.authenticated).toBe(true);
+  expect(body.profile.id).toBe("did:nether:google:998877");
+  expect(body.profile.email).toBe("oodaleek@gmail.com");
+  expect(body.profile.referralCode).toBe(generateReferralCode("did:nether:google:998877"));
+});
+test("missing database fails closed when SUPABASE_REQUIRED is enabled", async () => {
+  vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("SUPABASE_REQUIRED", "true"); vi.stubEnv("SUPABASE_URL", ""); vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
   await expect(syncUserToDatabase({ id: "user", email: "u@example.test", name: "User" })).rejects.toThrow("DATABASE_UNAVAILABLE");
 });
 test("referral codes are stable and distinct for identities", () => {
