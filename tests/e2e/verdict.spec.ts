@@ -1,4 +1,4 @@
-import { expect, test, type WebSocketRoute } from "@playwright/test";
+import { expect, test, type WebSocketRoute } from "./fixtures";
 import { mkdirSync } from "node:fs";
 import { readCardQr } from "../../scripts/lib/read-card-qr";
 
