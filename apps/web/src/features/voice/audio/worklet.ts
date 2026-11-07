@@ -18,7 +18,8 @@ class CaptureProcessor extends AudioWorkletProcessor {
   }
 }
 class PlaybackProcessor extends AudioWorkletProcessor {
-  private queue = new PlaybackQueue(sampleRate);
+  // Prebuffer 80ms (1920 samples at 24kHz) to absorb packet jitter, with adaptive time-stretching.
+  private queue = new PlaybackQueue(sampleRate, 24000, 12, { prebufferSamples: 1920, adaptiveRate: true });
   private generation = 0;
   private frames = 0;
   constructor() {
