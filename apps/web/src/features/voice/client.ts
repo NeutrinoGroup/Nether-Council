@@ -6,7 +6,7 @@ import { getVisitorId } from "../analytics/visitor";
 export type SoulSoupView = { mood: SoulMood; worries: string[]; ritual?: { callId: string; blessing: string } };
 export type VoiceEngine = Pick<AudioEngine, "start" | "prepareOutput" | "play" | "stopCapture" | "mute" | "rms" | "isPlaying" | "analysers" | "settings"> & { clear(): number | void; stop(): number | void; queuedMs?(): number };
 type ResponseLatency = { sample: Parameters<typeof evaluateTurnSample>[0]; turnStoppedAt?: number; firstAudio: boolean };
-export type VoiceView = { latencySamples: TurnLatencySample[]; latencySummary?: LatencyObservatorySummary; soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
+export type VoiceView = { latencySamples: TurnLatencySample[]; latencySummary?: LatencyObservatorySummary; soup?: SoulSoupView; demo?: boolean; demoReason?: string; demoAudioUnavailable?: boolean; sceneAction?: UiAction; scene?: { mood: "calm" | "warm" | "storm"; worry?: string; blessing?: string }; phase: "idle" | "permission" | "connecting" | "listening" | "thinking" | "speaking" | "reconnecting" | "ended" | "error"; caption?: DisplayCaption; userCaption?: DisplayCaption; error?: string; reconnects: number; muted: boolean; session?: Session; connectMs?: number; firstAudioMs?: number; stopMs?: number; interruptedAt?: number; userTurns: number; claimReady: boolean; canClaim: boolean; elapsedSeconds: number; draft?: EncounterDraft; result?: IdentityResult; finalizing?: boolean; endReason?: "user" | "claim" | "time_limit" | "background" | "language_change" | "character_change" | "next_guest" | "error" };
 export const idleView: VoiceView = { latencySamples: [], phase: "idle", reconnects: 0, muted: false, userTurns: 0, claimReady: false, canClaim: false, elapsedSeconds: 0 };
 export class VoiceClient {
   private audio: VoiceEngine;
@@ -327,7 +327,7 @@ export class VoiceClient {
         if (this.canceled.has(event.responseId) || this.appliedCalls.has(event.callId) || event.responseId !== this.activeResponse || this.view.finalizing) return;
         this.appliedCalls.add(event.callId); this.applyScene(event.payload);
       } else if (event.type === "speech.stopped") {
-        if (!this.view.finalizing) { this.turnStoppedAt = performance.now(); this.awaitingTurnAudio = true; this.armFallback(); }
+        if (!this.view.finalizing) { this.turnStoppedAt = performance.now(); this.awaitingTurnAudio = true; this.armFallback(); this.update({ phase: "thinking", interruptedAt: undefined }); }
       } else if (event.type === "speech.started") {
         if (this.view.finalizing) return;
         clearTimeout(this.responseTimer);
@@ -338,7 +338,7 @@ export class VoiceClient {
         if (this.view.finalizing && !this.result) { this.canceled.add(event.responseId); return; }
         this.armFallback();
         this.beginResponseLatency(event.responseId, event.timing);
-        this.activeResponse = event.responseId; this.update({ caption: undefined });
+        this.activeResponse = event.responseId; this.update({ caption: undefined, ...(this.audio.isPlaying() ? {} : { phase: "thinking" }), interruptedAt: undefined });
         if (this.view.finalizing && this.result) this.closingResponse = event.responseId;
       } else if (event.type === "audio.delta") {
         if (this.canceled.has(event.responseId) || (this.view.finalizing && !this.result)) return;
@@ -360,7 +360,7 @@ export class VoiceClient {
           };
           this.publishLatency();
         }
-        this.update({ phase: "speaking", ...(this.view.firstAudioMs === undefined ? { firstAudioMs: Math.round(performance.now() - this.startedAt) } : {}) });
+        this.update({ phase: "speaking", interruptedAt: undefined, ...(this.view.firstAudioMs === undefined ? { firstAudioMs: Math.round(performance.now() - this.startedAt) } : {}) });
       } else if (event.type === "soul.action") {
         if (session.characterId !== "meng-po" || this.canceled.has(event.responseId) || this.soulCalls.has(event.callId) || this.completedSoulResponses.has(event.responseId) || event.responseId !== this.activeResponse) return;
         this.soulCalls.add(event.callId);
@@ -399,6 +399,7 @@ export class VoiceClient {
           this.publishLatency();
           this.failPendingLatency(); this.turnStoppedAt = undefined;
         }
+        if (this.view.phase === "thinking" && event.responseId === this.activeResponse && !this.audio.isPlaying() && !this.view.finalizing) this.update({ phase: "listening" });
         this.completedSoulResponses.add(event.responseId);
         if (!this.canceled.has(event.responseId)) clearTimeout(this.responseTimer);
         if (this.view.finalizing && this.result && event.responseId === this.closingResponse) { this.closingDone = true; this.finishWhenDrained(); }
@@ -451,13 +452,13 @@ export class VoiceClient {
     if (this.view.finalizing && this.result) this.stop(this.finishReason);
   }
   mute(value: boolean) { this.audio.mute(value); this.update({ muted: value }); }
-  analysers() { return this.audio.analysers(); }
+  analysers() { this.refreshPlaybackState(); return this.audio.analysers(); }
   rms() { return this.audio.rms(); }
-  measurePlayback() {
+  private refreshPlaybackState() {
     this.finishWhenDrained();
     if (this.view.phase === "speaking" && !this.audio.isPlaying()) this.update({ phase: "listening" });
-    return this.audio.rms();
   }
+  measurePlayback() { this.refreshPlaybackState(); return this.audio.rms(); }
   settings() { return this.audio.settings(); }
   private telemetry(name: "conversation_started") {
     const session = this.view.session;

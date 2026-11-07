@@ -10,6 +10,8 @@ export class AudioEngine {
   private silent?: GainNode;
   private analyser?: AnalyserNode;
   private inputAnalyser?: AnalyserNode;
+  private readonly nodes: { input?: AnalyserNode; output?: AnalyserNode } = {};
+  private rmsSamples?: Float32Array<ArrayBuffer>;
   private muted = false;
   private disposed = false;
   private capturing = false;
@@ -32,6 +34,7 @@ export class AudioEngine {
         await this.context!.audioWorklet.addModule(await preloadAudioWorklet());
         if (this.disposed) return;
         this.analyser = this.context!.createAnalyser(); this.analyser.fftSize = 256;
+        this.analyser.smoothingTimeConstant = 0;
         this.playback = new AudioWorkletNode(this.context!, "nether-playback", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
         this.playback.port.postMessage({ type: "clear", generation: this.generation });
         this.playback.connect(this.analyser).connect(this.context!.destination);
@@ -60,6 +63,7 @@ export class AudioEngine {
       this.silent = this.context!.createGain(); this.silent.gain.value = 0;
       this.inputAnalyser = this.context!.createAnalyser();
       this.inputAnalyser.fftSize = 512;
+      this.inputAnalyser.smoothingTimeConstant = 0;
       this.source.connect(this.inputAnalyser);
       this.source.connect(this.capture); this.capture.connect(this.silent).connect(this.context!.destination);
       this.capture.port.onmessage = ({ data }: MessageEvent<ArrayBuffer>) => {
@@ -77,12 +81,16 @@ export class AudioEngine {
       };
     } catch (error) { this.stopCapture(); throw error; }
   }
-  analysers() { return { input: this.capturing && !this.muted ? this.inputAnalyser : undefined, output: this.isPlaying() ? this.analyser : undefined }; }
+  analysers() {
+    this.nodes.input = this.capturing && !this.muted && !this.disposed ? this.inputAnalyser : undefined;
+    this.nodes.output = !this.disposed && this.isPlaying() ? this.analyser : undefined;
+    return this.nodes;
+  }
   isPlaying() { return this.submitted > this.consumed; }
   queuedMs(): number { return Math.max(0, Math.round((this.submitted - this.consumed) / 24000 * 1000)); }
   settings() { return this.stream?.getAudioTracks()[0]?.getSettings(); }
   mute(value: boolean) {
-    this.muted = value; this.speechMs = this.silenceMs = 0; this.voiceActive = false;
+    this.muted = value; if (value) this.nodes.input = undefined; this.speechMs = this.silenceMs = 0; this.voiceActive = false;
     this.stream?.getAudioTracks().forEach(track => { track.enabled = !value; });
   }
   play(base64: string) {
@@ -95,18 +103,21 @@ export class AudioEngine {
   }
   rms(): number {
     if (!this.analyser || !this.isPlaying()) return 0;
-    const samples = new Float32Array(this.analyser.fftSize); this.analyser.getFloatTimeDomainData(samples);
-    return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+    if (this.rmsSamples?.length !== this.analyser.fftSize) this.rmsSamples = new Float32Array(this.analyser.fftSize);
+    const samples = this.rmsSamples; this.analyser.getFloatTimeDomainData(samples);
+    let power = 0;
+    for (let i = 0; i < samples.length; i++) power += samples[i] * samples[i];
+    return Math.sqrt(power / samples.length);
   }
   clear(): number {
     const startedAt = performance.now();
-    this.submitted = this.consumed = 0;
+    this.submitted = this.consumed = 0; this.nodes.output = undefined;
     this.playback?.port.postMessage({ type: "clear", generation: ++this.generation });
     // Command dispatch duration; the worklet and physical output stop later.
     return performance.now() - startedAt;
   }
   stopCapture() {
-    this.capturing = false; this.captureGeneration++;
+    this.capturing = false; this.nodes.input = undefined; this.captureGeneration++;
     if (this.capture) this.capture.port.onmessage = null;
     this.inputAnalyser?.disconnect(); this.inputAnalyser = undefined;
     this.capture?.disconnect(); this.source?.disconnect(); this.silent?.disconnect();

@@ -5,6 +5,7 @@ import type { CharacterId, Locale } from "@nether/contracts";
 import { getCharacter } from "@nether/party-core";
 import type { VoiceClient, VoiceView } from "./client";
 import type { AudioLevels } from "./useAudioReactive";
+import { DualChannelWaveform } from "./DualChannelWaveform";
 import { SoupAltar } from "./SoupAltar";
 import { TheatreCaptions } from "./TheatreCaptions";
 import { LettingGoRitual } from "../ritual/LettingGoRitual";
@@ -39,6 +40,7 @@ export function ImmersiveEncounter({ view, locale, invite, characterId, client, 
       </div>}
       {view.result ? <LettingGoRitual key={view.result.id} result={view.result} draft={view.draft} locale={locale} invite={invite} reduced={reduced} /> : <p className="soup-description">{locale === "zh" ? "把烦恼说出来，注入这一碗。" : "Pour your story into the brew."}</p>}
       <div className="encounter-glass">
+        <DualChannelWaveform view={view} audio={audio} locale={locale} characterName={meta.name[locale]} variant="immersive" />
         <InAppBrowserBanner locale={locale} />
         <VoiceTextInput view={view} locale={locale} client={client} />
         <p role="status">{view.finalizing || generatingVerdict ? (locale === "zh" ? "正在为你写下解忧签…" : "Writing your blessing…") : t.states[view.phase]}</p>
