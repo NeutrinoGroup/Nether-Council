@@ -2,18 +2,26 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { Observer } from "gsap/Observer";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { CHARACTER_IDS, getCharacter } from "@nether/party-core";
 import type { CharacterId, Locale } from "@nether/contracts";
 
-gsap.registerPlugin(useGSAP, ScrollTrigger, Observer);
+gsap.registerPlugin(useGSAP);
 
-const artwork = (id: CharacterId) => `/artworks/${id}.webp`;
-const railIds = [...CHARACTER_IDS, ...CHARACTER_IDS, ...CHARACTER_IDS];
+const AUTOPLAY_DELAY = 3.5;
+const TRANSITION_DURATION = 0.8;
+const count = CHARACTER_IDS.length;
+const wrapIndex = gsap.utils.wrap(0, count);
+
+type PauseReason = "hover" | "focus" | "touch" | "viewport" | "document" | "motion" | "manual";
+type CarouselControls = {
+  move: (direction: number) => void;
+  select: (index: number) => void;
+  pause: (reason: PauseReason, paused: boolean) => void;
+  toggleAutoplay: () => void;
+};
 
 function Arrow({ back = false }: { back?: boolean }) {
   return (
@@ -33,473 +41,325 @@ export function CastCarousel({
   onChoose: (id: CharacterId) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const posters = useRef<HTMLDivElement>(null);
   const reel = useRef<HTMLDivElement>(null);
-  const details = useRef<HTMLDivElement>(null);
-
-  const controlsHoveredRef = useRef(false);
-  const focusedRef = useRef(false);
-  const manualPauseUntilRef = useRef(0);
-  const posRef = useRef({ poster: 0, reel: 0, detail: 0 });
-
+  const controls = useRef<CarouselControls | null>(null);
+  const reelId = useId();
   const [current, setCurrent] = useState(0);
-  const [visible, setVisible] = useState({ first: 0, last: 0 });
+  const [autoplayEnabled, setAutoplayEnabled] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const zh = locale === "zh";
 
-  const pauseAutoplay = useCallback((holdMs = 2800) => {
-    manualPauseUntilRef.current = Math.max(manualPauseUntilRef.current, performance.now() + holdMs);
-  }, []);
-
-  const syncPosition = useCallback(() => {
+  useGSAP(() => {
+    const container = root.current;
     const element = reel.current;
-    if (!element || element.children.length === 0) return;
+    if (!container || !element) return;
 
-    const firstCard = element.children[0] as HTMLElement;
-    let nearest = 0;
-    let nearestDist = Infinity;
-    for (let index = 0; index < element.children.length; index++) {
-      const card = element.children[index] as HTMLElement;
-      const dist = Math.abs(card.offsetLeft - firstCard.offsetLeft - element.scrollLeft);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = index;
-      }
-    }
-    setCurrent(nearest);
+    const cards = Array.from(element.children) as HTMLElement[];
+    const setters = cards.map((card) => gsap.quickSetter(card, "x", "px"));
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const paused = new Set<PauseReason>(["viewport"]);
+    if (window.matchMedia("(hover: hover)").matches && container.matches(":hover")) paused.add("hover");
+    if (container.contains(document.activeElement)) paused.add("focus");
+    const position = { value: 0 };
+    let target = 0;
+    let step = 0;
+    let active = 0;
+    let automatic = false;
+    let enabled = true;
+    let delay: gsap.core.Tween | undefined;
+    let tween: gsap.core.Tween | undefined;
+    let resume: gsap.core.Tween | undefined;
+    let pressedPointer: number | undefined;
+    let gesture: { id: number; x: number; y: number; origin: number; dragging: boolean } | undefined;
+    let suppressClick = false;
 
-    const bounds = element.getBoundingClientRect();
-    const shown = Array.from(element.children).flatMap((child, index) => {
-      const card = child.getBoundingClientRect();
-      const overlap = Math.min(card.right, bounds.right) - Math.max(card.left, bounds.left);
-      return card.width > 0 && overlap >= card.width * 0.45 ? [index] : [];
-    });
-    const nextFirst = shown[0] ?? nearest;
-    const nextLast = shown.at(-1) ?? nearest;
-    setVisible((prev) =>
-      prev.first === nextFirst && prev.last === nextLast ? prev : { first: nextFirst, last: nextLast }
-    );
-  }, []);
-
-  useEffect(() => {
-    const element = reel.current;
-    if (!element) return;
-    const observer = new ResizeObserver(syncPosition);
-    observer.observe(element);
-    syncPosition();
-    return () => observer.disconnect();
-  }, [syncPosition]);
-
-  useGSAP(
-    () => {
-      const media = gsap.matchMedia();
-
-      media.add("(prefers-reduced-motion: no-preference)", () => {
-        const posterEl = posters.current;
-        const reelEl = reel.current;
-        const detailEl = details.current;
-        if (!posterEl || !reelEl || !detailEl) return;
-
-        const maxScroll = (el: HTMLElement) => Math.max(0, el.scrollWidth - el.clientWidth);
-
-        const initPositions = () => {
-          const maxD = maxScroll(detailEl);
-          posRef.current.poster = posterEl.scrollLeft;
-          posRef.current.reel = reelEl.scrollLeft;
-          if (detailEl.scrollLeft <= 2 && maxD > 0) {
-            detailEl.scrollLeft = maxD;
-            posRef.current.detail = maxD;
-          } else {
-            posRef.current.detail = detailEl.scrollLeft;
-          }
-        };
-
-        initPositions();
-        const detailResize = new ResizeObserver(() => {
-          if (posRef.current.detail <= 2 && maxScroll(detailEl) > 0) {
-            const maxD = maxScroll(detailEl);
-            detailEl.scrollLeft = maxD;
-            posRef.current.detail = maxD;
-          }
-        });
-        detailResize.observe(detailEl);
-
-        const boostState = { target: 0, current: 0 };
-        let lastBoostApplied = 0;
-        let lastProgress = -1;
-        let lastWheelAt = 0;
-
-        const applyScrollBoost = (delta: number) => {
-          boostState.target += delta;
-          gsap.to(boostState, {
-            current: boostState.target,
-            duration: 0.42,
-            ease: "power3.out",
-            overwrite: "auto",
-          });
-        };
-
-        // GSAP ScrollTrigger listens to page vertical scroll progress across the carousel section
-        const scrollTrigger = ScrollTrigger.create({
-          trigger: root.current,
-          start: "clamp(top bottom)",
-          end: "clamp(bottom top)",
-          scrub: 0.65,
-          invalidateOnRefresh: true,
-          onUpdate: (self) => {
-            if (lastProgress < 0) {
-              lastProgress = self.progress;
-              return;
-            }
-            const dProgress = self.progress - lastProgress;
-            lastProgress = self.progress;
-            // Ignore single-frame programmatic anchor jumps (> 0.35 progress)
-            if (
-              Math.abs(dProgress) > 0.0004 &&
-              Math.abs(dProgress) <= 0.35 &&
-              performance.now() - lastWheelAt > 48
-            ) {
-              const span = Math.max(720, maxScroll(reelEl));
-              applyScrollBoost(dProgress * span * 1.15);
-            }
-          },
-        });
-
-        // GSAP Observer listens directly to mouse wheel and touch scroll gestures
-        const wheelObserver = Observer.create({
-          target: window,
-          type: "wheel,touch",
-          wheelSpeed: 1,
-          onChange: (self) => {
-            const container = root.current;
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            if (rect.bottom < -120 || rect.top > window.innerHeight + 120) return;
-
-            const deltaY = self.deltaY ?? 0;
-            const deltaX = self.deltaX ?? 0;
-            const primary = Math.abs(deltaY) >= Math.abs(deltaX) ? deltaY : deltaX;
-            if (Math.abs(primary) < 0.5) return;
-
-            lastWheelAt = performance.now();
-            lastProgress = scrollTrigger.progress;
-            applyScrollBoost(primary * 1.25);
-          },
-        });
-
-        let inView = false;
-        const containerEl = root.current;
-        const viewObserver = new IntersectionObserver(
-          ([entry]) => {
-            inView = Boolean(entry?.isIntersecting);
-          },
-          { rootMargin: "160px 0px" }
-        );
-        if (containerEl) viewObserver.observe(containerEl);
-
-        // Continuous GSAP ticker for automatic scrolling + GSAP-tweened mouse wheel boost
-        const tick = (_time: number, deltaTime: number) => {
-          const boostStep = boostState.current - lastBoostApplied;
-          lastBoostApplied = boostState.current;
-
-          if (!inView && Math.abs(boostStep) <= 0.02) return;
-          const elapsed = Math.min(64, Math.max(8, deltaTime || 16.67));
-          const now = performance.now();
-          const isPaused =
-            !inView ||
-            controlsHoveredRef.current ||
-            focusedRef.current ||
-            now < manualPauseUntilRef.current;
-
-          const autoPoster = isPaused ? 0 : (52 * elapsed) / 1000;
-          const autoReel = isPaused ? 0 : (58 * elapsed) / 1000;
-          const autoDetail = isPaused ? 0 : (52 * elapsed) / 1000;
-
-          const maxP = maxScroll(posterEl);
-          if (maxP > 0) {
-            posRef.current.poster += autoPoster + boostStep;
-            if (posRef.current.poster >= maxP) posRef.current.poster -= maxP;
-            else if (posRef.current.poster < 0) posRef.current.poster += maxP;
-            posterEl.scrollLeft = posRef.current.poster;
-          }
-
-          const maxD = maxScroll(detailEl);
-          if (maxD > 0) {
-            posRef.current.detail -= autoDetail + boostStep;
-            if (posRef.current.detail <= 0) posRef.current.detail += maxD;
-            else if (posRef.current.detail > maxD) posRef.current.detail -= maxD;
-            detailEl.scrollLeft = posRef.current.detail;
-          }
-
-          const maxR = maxScroll(reelEl);
-          if (maxR > 0) {
-            const reelDelta = autoReel + (focusedRef.current ? 0 : boostStep * 0.95);
-            if (Math.abs(reelDelta) > 0.01) {
-              posRef.current.reel += reelDelta;
-              if (posRef.current.reel >= maxR) posRef.current.reel = 0;
-              else if (posRef.current.reel < 0) posRef.current.reel = maxR;
-              reelEl.scrollLeft = posRef.current.reel;
-            }
-          }
-        };
-
-        gsap.ticker.add(tick);
-
-        return () => {
-          gsap.ticker.remove(tick);
-          wheelObserver.kill();
-          scrollTrigger.kill();
-          viewObserver.disconnect();
-          detailResize.disconnect();
-          gsap.killTweensOf(boostState);
-          gsap.killTweensOf(reelEl);
-          posterEl.scrollLeft = 0;
-          reelEl.scrollLeft = 0;
-          detailEl.scrollLeft = 0;
-          posRef.current = { poster: 0, reel: 0, detail: 0 };
-        };
+    // Recycle each original card only when it is fully outside the viewport.
+    // There are seven links and seven images, with no cloned focus targets or end reset.
+    gsap.set(cards, { x: 0 });
+    const render = () => {
+      cards.forEach((_, index) => {
+        const slot = gsap.utils.wrap(-1, count - 1, index - position.value);
+        setters[index]((slot - index) * step);
       });
-
-      return () => media.revert();
-    },
-    { scope: root }
-  );
-
-  const animateReelTo = useCallback(
-    (targetLeft: number) => {
-      const element = reel.current;
-      if (!element) return;
-      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
-      const clamped = Math.max(0, Math.min(distance, targetLeft));
-      pauseAutoplay(3200);
-      gsap.killTweensOf(element);
-
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        element.scrollLeft = clamped;
-        posRef.current.reel = clamped;
-        syncPosition();
-      } else {
-        gsap.to(element, {
-          scrollLeft: clamped,
-          duration: 0.28,
-          ease: "power3.out",
-          overwrite: true,
-          onUpdate: () => {
-            posRef.current.reel = element.scrollLeft;
-            syncPosition();
-          },
-          onComplete: () => {
-            posRef.current.reel = element.scrollLeft;
-            syncPosition();
-          },
-        });
+      const nearest = wrapIndex(Math.round(position.value));
+      if (nearest !== active) {
+        active = nearest;
+        setCurrent(nearest);
       }
-    },
-    [pauseAutoplay, syncPosition]
-  );
+    };
 
-  const scrollToIndex = useCallback(
-    (index: number) => {
-      const element = reel.current;
-      if (!element || !element.children[index]) return;
-      const first = element.children[0] as HTMLElement;
-      const target = element.children[index] as HTMLElement;
-      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
-      const targetOffset =
-        index === 0
-          ? 0
-          : index === CHARACTER_IDS.length - 1
-          ? distance
-          : target.offsetLeft - first.offsetLeft;
-      setCurrent(index);
-      animateReelTo(targetOffset);
-    },
-    [animateReelTo]
-  );
+    const schedule = () => {
+      delay?.kill();
+      if (paused.size || tween || gesture) return;
+      delay = gsap.delayedCall(AUTOPLAY_DELAY, () => animateTo(target + 1, true));
+    };
 
-  const move = useCallback(
-    (direction: number) => {
-      const element = reel.current;
-      if (!element || element.children.length < 2) return;
-      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
-      const first = element.children[0] as HTMLElement;
-      const second = element.children[1] as HTMLElement;
-      const step = second.offsetLeft - first.offsetLeft;
-      const atEnd = element.scrollLeft >= distance - 2;
-      const atStart = element.scrollLeft <= 2;
-      const nextLeft =
-        direction > 0 && atEnd
-          ? 0
-          : direction < 0 && atStart
-          ? distance
-          : element.scrollLeft + direction * step;
-      animateReelTo(nextLeft);
-    },
-    [animateReelTo]
-  );
+    const animateTo = (destination: number, autoplay = false) => {
+      delay?.kill();
+      resume?.kill();
+      tween?.kill();
+      tween = undefined;
+      target = destination;
+      automatic = autoplay;
+      const transferFocus = !autoplay && cards.includes(document.activeElement as HTMLElement);
+      const finish = () => {
+        // Keep the numerical position bounded without changing any card's visual position.
+        position.value = target = wrapIndex(destination);
+        tween = undefined;
+        render();
+        if (transferFocus && cards.includes(document.activeElement as HTMLElement)) {
+          cards[wrapIndex(destination)].focus({ preventScroll: true });
+        }
+        schedule();
+      };
+      if (media.matches) {
+        finish();
+        return;
+      }
+      tween = gsap.to(position, {
+        value: destination,
+        duration: TRANSITION_DURATION,
+        ease: "power3.inOut",
+        onUpdate: render,
+        onComplete: finish,
+      });
+    };
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      const element = reel.current;
-      if (!element) return;
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const pause = (reason: PauseReason, value: boolean) => {
+      if (paused.has(reason) === value) return;
+      if (value) paused.add(reason);
+      else paused.delete(reason);
+      setPlaying(paused.size === 0);
+      delay?.kill();
+      if (tween && automatic) {
+        resume?.kill();
+        if (paused.size) tween.pause();
+        else {
+          tween.timeScale(0).resume();
+          resume = gsap.to(tween, { timeScale: 1, duration: 0.25, ease: "power1.in" });
+        }
+      } else {
+        schedule();
+      }
+    };
+
+    const move = (direction: number) => animateTo(target + direction);
+    const select = (index: number) => {
+      const distance = gsap.utils.wrap(-count / 2, count / 2, index - wrapIndex(target));
+      if (distance === 0 && position.value === target) return;
+      animateTo(target + distance);
+    };
+    controls.current = {
+      move,
+      select,
+      pause,
+      toggleAutoplay: () => {
+        enabled = !enabled;
+        setAutoplayEnabled(enabled);
+        pause("manual", !enabled);
+      },
+    };
+
+    const measure = () => {
+      step = cards[0].getBoundingClientRect().width + parseFloat(getComputedStyle(element).columnGap);
+      render();
+    };
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(element);
+    resizeObserver.observe(cards[0]);
+    measure();
+
+    const viewObserver = new IntersectionObserver(([entry]) => pause("viewport", !entry?.isIntersecting));
+    viewObserver.observe(element);
+    const onVisibility = () => pause("document", document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
+
+    const onMotionChange = () => {
+      setReducedMotion(media.matches);
+      pause("motion", media.matches);
+      // Finish at the selected card when the preference changes, preserving the selection.
+      if (media.matches && tween) animateTo(target);
+    };
+    media.addEventListener("change", onMotionChange);
+    onMotionChange();
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      suppressClick = false;
+      pressedPointer = event.pointerId;
+      pause("touch", true);
+      if (!element.contains(event.target as Node)) return;
+      gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, origin: position.value, dragging: false };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const dx = event.clientX - gesture.x;
+      const dy = event.clientY - gesture.y;
+      if (!gesture.dragging) {
+        if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
+        gesture.dragging = true;
+        suppressClick = true;
+        resume?.kill();
+        tween?.kill();
+        tween = undefined;
+        element.setPointerCapture(event.pointerId);
+      }
+      position.value = gesture.origin - dx / step;
+      render();
+    };
+    const endGesture = (event: PointerEvent) => {
+      if (event.pointerId !== pressedPointer) return;
+      pressedPointer = undefined;
+      const { dragging = false, origin = position.value } = gesture ?? {};
+      gesture = undefined;
+      if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+      if (dragging) {
+        const distance = position.value - origin;
+        const destination = Math.abs(distance) > 0.15
+          ? Math.round(origin) + (distance > 0 ? Math.ceil(distance) : Math.floor(distance))
+          : Math.round(origin);
+        animateTo(event.type === "pointercancel" ? Math.round(position.value) : destination);
+      }
+      pause("touch", false);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (!suppressClick || event.detail === 0) return;
       event.preventDefault();
-      if (event.key === "Home") {
-        setCurrent(0);
-        animateReelTo(0);
-      } else if (event.key === "End") {
-        setCurrent(CHARACTER_IDS.length - 1);
-        animateReelTo(element.scrollWidth - element.clientWidth);
-      } else {
-        move(event.key === "ArrowLeft" ? -1 : 1);
-      }
-    },
-    [animateReelTo, move]
-  );
+      event.stopPropagation();
+      suppressClick = false;
+    };
+    const onDragStart = (event: DragEvent) => event.preventDefault();
+    let lastWheelAt = -Infinity;
+    const onWheel = (event: WheelEvent) => {
+      // Vertical wheel gestures still scroll the page; only horizontal intent selects a card.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY) || Math.abs(event.deltaX) < 4) return;
+      event.preventDefault();
+      if (performance.now() - lastWheelAt < TRANSITION_DURATION * 1000) return;
+      lastWheelAt = performance.now();
+      move(event.deltaX > 0 ? 1 : -1);
+    };
+    container.addEventListener("pointerdown", onPointerDown);
+    element.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", endGesture);
+    window.addEventListener("pointercancel", endGesture);
+    element.addEventListener("lostpointercapture", endGesture);
+    element.addEventListener("click", onClick, true);
+    element.addEventListener("dragstart", onDragStart);
+    element.addEventListener("wheel", onWheel, { passive: false });
 
-  const firstLabel = String(visible.first + 1).padStart(2, "0");
-  const lastLabel = String(visible.last + 1).padStart(2, "0");
+    return () => {
+      controls.current = null;
+      delay?.kill();
+      resume?.kill();
+      tween?.kill();
+      resizeObserver.disconnect();
+      viewObserver.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+      media.removeEventListener("change", onMotionChange);
+      container.removeEventListener("pointerdown", onPointerDown);
+      element.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endGesture);
+      window.removeEventListener("pointercancel", endGesture);
+      element.removeEventListener("lostpointercapture", endGesture);
+      element.removeEventListener("click", onClick, true);
+      element.removeEventListener("dragstart", onDragStart);
+      element.removeEventListener("wheel", onWheel);
+    };
+  }, { scope: root });
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") controls.current?.select(0);
+    else if (event.key === "End") controls.current?.select(count - 1);
+    else controls.current?.move(event.key === "ArrowLeft" ? -1 : 1);
+  };
 
   return (
     <div
       ref={root}
       className="cast-carousel"
-      onTouchStart={() => pauseAutoplay(3500)}
-      onFocusCapture={() => {
-        focusedRef.current = true;
-        pauseAutoplay(3500);
+      onKeyDown={handleKeyDown}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") controls.current?.pause("hover", true);
       }}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") controls.current?.pause("hover", false);
+      }}
+      onFocusCapture={() => controls.current?.pause("focus", true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          focusedRef.current = false;
-          pauseAutoplay(1200);
+          controls.current?.pause("focus", false);
         }
       }}
     >
-      {/* Top Row: Character posters ribbon driven by GSAP auto-scroll & ScrollTrigger/wheel */}
-      <div className="cast-ribbon cast-poster-ribbon" aria-hidden="true">
-        <div ref={posters} className="cast-ribbon-reel">
-          {railIds.map((id, index) => (
-            <div className="cast-poster-print" key={`${id}-${index}`}>
-              <Image
-                src={getCharacter(id).posterUrl}
-                width={500}
-                height={500}
-                alt=""
-                unoptimized
-                loading="lazy"
-              />
-              <span className="cast-poster-tag">{getCharacter(id).name[locale]}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Control Bar: Lead copy + Pagination ticks + Range counter + Square Prev/Next */}
       <div className="cast-gallery-tools">
         <p>{zh ? "七位来客，各有故事。选一位，开聊。" : "Seven guests. Seven stories. Choose your company."}</p>
-        <div
-          className="cast-gallery-controls"
-          onPointerEnter={() => {
-            controlsHoveredRef.current = true;
-          }}
-          onPointerLeave={() => {
-            controlsHoveredRef.current = false;
-            pauseAutoplay(1200);
-          }}
-        >
-          <div
-            className="cast-pagination-dots"
-            role="tablist"
-            aria-label={zh ? "角色选择指示器" : "Character pagination"}
-          >
-            {CHARACTER_IDS.map((id, index) => {
-              const isActive = index === current;
-              const char = getCharacter(id);
-              return (
-                <button
-                  key={`dot-${id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-label={`${char.name[locale]} (${index + 1}/7)`}
-                  className={`cast-dot${isActive ? " is-active" : ""}`}
-                  onClick={() => scrollToIndex(index)}
-                />
-              );
-            })}
+        <div className="cast-gallery-controls">
+          <div className="cast-pagination-dots" role="group" aria-label={zh ? "角色选择指示器" : "Character pagination"}>
+            {CHARACTER_IDS.map((id, index) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={index === current}
+                aria-controls={reelId}
+                aria-label={`${getCharacter(id).name[locale]} (${index + 1}/${count})`}
+                className={`cast-dot${index === current ? " is-active" : ""}`}
+                onClick={() => controls.current?.select(index)}
+              />
+            ))}
           </div>
           <span
             className="cast-position"
-            aria-live="polite"
+            aria-live={playing ? "off" : "polite"}
             aria-atomic="true"
-            aria-label={
-              zh
-                ? `正在显示第 ${visible.first + 1} 至 ${visible.last + 1} 位，共七位角色`
-                : `Showing characters ${visible.first + 1} to ${visible.last + 1} of seven`
-            }
+            aria-label={zh ? `当前第 ${current + 1} 位，共 ${count} 位角色` : `Character ${current + 1} of ${count}`}
           >
-            {firstLabel}
-            {firstLabel !== lastLabel && `–${lastLabel}`} <span>/ 07</span>
+            {String(current + 1).padStart(2, "0")} <span>/ {String(count).padStart(2, "0")}</span>
           </span>
           <button
             className="cast-arrow"
             type="button"
-            onClick={() => move(-1)}
-            aria-label={zh ? "上一位角色" : "Previous character"}
+            aria-controls={reelId}
+            disabled={reducedMotion}
+            aria-label={reducedMotion
+              ? zh ? "已减少动态效果，自动播放关闭" : "Autoplay off for reduced motion"
+              : autoplayEnabled ? zh ? "暂停自动播放" : "Pause autoplay" : zh ? "开启自动播放" : "Start autoplay"}
+            onClick={() => controls.current?.toggleAutoplay()}
           >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d={autoplayEnabled && !reducedMotion ? "M7 4v12M13 4v12" : "m7 4 9 6-9 6Z"} stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+          <button className="cast-arrow" type="button" aria-controls={reelId} onClick={() => controls.current?.move(-1)} aria-label={zh ? "上一位角色" : "Previous character"}>
             <Arrow back />
           </button>
-          <button
-            className="cast-arrow"
-            type="button"
-            onClick={() => move(1)}
-            aria-label={zh ? "下一位角色" : "Next character"}
-          >
+          <button className="cast-arrow" type="button" aria-controls={reelId} onClick={() => controls.current?.move(1)} aria-label={zh ? "下一位角色" : "Next character"}>
             <Arrow />
           </button>
         </div>
       </div>
-
-      {/* Center Row: Seven full 4:5 character artboards */}
       <div
         ref={reel}
+        id={reelId}
         className="cast-reel"
         tabIndex={0}
         role="region"
+        aria-roledescription={zh ? "轮播图" : "carousel"}
         aria-label={zh ? "角色原画，左右滑动选择角色" : "Character artwork, scroll sideways to choose"}
-        onKeyDown={handleKeyDown}
-        onScroll={() => {
-          const element = reel.current;
-          if (element && Math.abs(element.scrollLeft - posRef.current.reel) > 6) {
-            posRef.current.reel = element.scrollLeft;
-            pauseAutoplay(2400);
-          }
-          syncPosition();
-        }}
       >
         {CHARACTER_IDS.map((id, index) => {
           const character = getCharacter(id);
-          const isActive = index === current;
           return (
             <Link
               key={id}
               href={href(id)}
-              className={`cast-performer${isActive ? " is-active" : ""}`}
+              className={`cast-performer${index === current ? " is-active" : ""}`}
               aria-label={`${zh ? "与这位角色开聊" : "Talk to this character"}: ${character.name[locale]}`}
-              onFocus={() => {
-                setCurrent(index);
-                const element = reel.current;
-                if (!element) return;
-                const first = element.children[0] as HTMLElement;
-                const card = element.children[index] as HTMLElement;
-                if (!first || !card) return;
-                const cardLeft = card.offsetLeft - first.offsetLeft;
-                const cardRight = cardLeft + card.offsetWidth;
-                if (cardLeft < element.scrollLeft || cardRight > element.scrollLeft + element.clientWidth) {
-                  element.scrollLeft = Math.max(0, cardLeft);
-                  posRef.current.reel = element.scrollLeft;
-                  syncPosition();
-                }
+              onFocus={(event) => {
+                if (event.currentTarget.matches(":focus-visible")) controls.current?.select(index);
               }}
               onClick={(event) => {
                 if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -508,19 +368,15 @@ export function CastCarousel({
               }}
             >
               <div className="cast-effigy">
-                <Image src={artwork(id)} width={960} height={1200} alt="" unoptimized loading="lazy" />
+                <Image src={`/artworks/${id}.webp`} width={960} height={1200} alt="" unoptimized loading="lazy" draggable={false} />
               </div>
               <div className="cast-caption">
                 <div className="cast-meta">
                   <span className="cast-index">{String(index + 1).padStart(2, "0")}</span>
                   <span className="cast-medium">
                     {id === "meng-po"
-                      ? zh
-                        ? "3D 形象 · 实时语音"
-                        : "3D Avatar · Live voice"
-                      : zh
-                      ? "角色原画 · 实时语音"
-                      : "Original artwork · Live voice"}
+                      ? zh ? "3D 形象 · 实时语音" : "3D Avatar · Live voice"
+                      : zh ? "角色原画 · 实时语音" : "Original artwork · Live voice"}
                   </span>
                 </div>
                 <span className="cast-name">{character.name[locale]}</span>
@@ -533,18 +389,6 @@ export function CastCarousel({
             </Link>
           );
         })}
-      </div>
-
-      {/* Bottom Row: Reverse-flowing artwork detail ribbon */}
-      <div className="cast-ribbon cast-detail-ribbon" aria-hidden="true">
-        <div ref={details} className="cast-ribbon-reel">
-          {railIds.map((id, index) => (
-            <div className="cast-detail-print" key={`${id}-${index}`}>
-              <Image src={artwork(id)} width={960} height={1200} alt="" unoptimized loading="lazy" />
-              <span>{getCharacter(id).name[locale]}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
