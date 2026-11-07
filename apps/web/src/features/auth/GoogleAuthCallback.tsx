@@ -6,6 +6,7 @@ import {
   parseGoogleCallback,
   recordGoogleProfile,
 } from "@/lib/googleAuth";
+import { consumeEntryContext } from "./entry-context";
 
 let claimedCode: string | null = null;
 
@@ -33,6 +34,8 @@ export function GoogleAuthCallback() {
     exchangeGoogleCode(parsed.code, state)
       .then((profile) => {
         recordGoogleProfile(profile);
+        const returnPath = consumeEntryContext();
+        if (returnPath) window.location.replace(returnPath);
       })
       .catch((err: unknown) => {
         setErrorMsg(err instanceof Error ? err.message : String(err));

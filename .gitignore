@@ -28,3 +28,4 @@ supabase/.temp/
 
 # Isolated realtime browser verification build
 apps/web/.next-realtime/
+apps/web/.next-invitation/

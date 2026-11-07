@@ -11,6 +11,7 @@ import {
   recordGoogleProfile,
   type GoogleProfile,
 } from "@/lib/googleAuth";
+import { rememberEntryContext } from "./entry-context";
 
 function subscribeAuth(notify: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -46,6 +47,7 @@ export function useAuth() {
 
   const loginWithGoogle = useCallback(() => {
     if (typeof window !== "undefined") {
+      rememberEntryContext();
       window.location.href = getGoogleAuthUrl();
     }
   }, []);
