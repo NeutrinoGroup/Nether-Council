@@ -217,15 +217,18 @@ test("an automatic transition resumes from its paused position and waits while o
   await expectSelected(page, 2, autoplayTimeout);
 });
 
-test("reduced motion stops autoplay, preserves selection and keeps manual controls working", async ({ page }) => {
+test("reduced motion softens transition, preserves selection and keeps autoplay toggle interactive", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openGallery(page);
   await dotsFor(page).nth(4).click();
   await expectSelected(page, 4);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(page.getByRole("button", { name: "Autoplay off for reduced motion" })).toBeDisabled();
+  const toggle = page.getByRole("button", { name: "Pause autoplay", exact: true });
+  await expect(toggle).toBeEnabled();
+  await toggle.click();
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.mouse.move(4, 4);
+  await page.waitForTimeout(400);
   const stopped = await positions(page);
   await page.waitForTimeout(3900);
   expect(await positions(page)).toEqual(stopped);
@@ -234,8 +237,7 @@ test("reduced motion stops autoplay, preserves selection and keeps manual contro
   await expectSelected(page, 5);
   await dotsFor(page).last().click();
   await expectSelected(page, 6);
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await reelFor(page).scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "Start autoplay", exact: true }).click();
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.mouse.move(4, 4);
   await expectSelected(page, 0, autoplayTimeout);
