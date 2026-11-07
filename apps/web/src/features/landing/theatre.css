@@ -33,43 +33,58 @@
 @keyframes encounter-wake{from{opacity:0;filter:blur(8px);transform:translateY(16px)}to{opacity:1;filter:blur(0);transform:translateY(0)}}
 @media(max-width:700px){.theatre-stage{position:fixed;inset:0;width:100%;height:100svh;margin:0}.theatre-opening{min-height:calc(100svh - 78px);padding:30px 24px 40px;justify-content:space-between}.theatre-opening h1{width:100%;font-size:64px}.theatre-invitation{margin-top:260px;width:100%;padding-top:18px;background:linear-gradient(0deg,#11100f 70%,transparent)}.theatre-invitation>p{max-width:34ch}.theatre-stage .theatre-poster{left:8%;right:8%;top:18%;bottom:15%}.theatre-stage .theatre-model-state{display:none}.theatre-story{background:var(--stage)}.theatre-vignette{background:radial-gradient(ellipse at 50% 45%,transparent 20%,#11100fa8 80%)}.immersive-encounter{padding:20px 22px 28px}.encounter-topline h2{font-size:30px}.encounter-topline h2 span{font-size:11px}.encounter-topline button{font-size:12px}.immersive-dialogue{width:100%;margin-top:36svh}.theatre-subtitles{min-height:0;background:linear-gradient(0deg,#11100fdf,transparent)}.encounter-welcome{font-size:21px}.encounter-glass{padding:18px}.theatre-subtitle{font-size:21px;max-height:26vh}.soup-altar{height:120px}.soup-description{margin-bottom:22px}.letting-go-ritual{background:#11100fd9;padding:20px 12px}.ritual-verdict{font-size:21px}}
 @media(prefers-reduced-motion:reduce){.immersive-encounter{animation:none}.theatre-vignette{transition:none}}
-.theatre-enter{border:0;border-bottom:1px solid var(--ember)}.encounter-glass .invite-note{background:none;color:var(--ash);padding:0;border:0;border-radius:0;font-size:13px}/* The full artboards lead; the two narrow print rails form the exhibition edges. */
-.cast-carousel{position:relative;margin-inline:-4.2vw}
-.cast-gallery-tools{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:30px 4.2vw 12px}
-.cast-gallery-tools p{font-size:13px;color:var(--ash);line-height:1.7}
-.cast-gallery-controls{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.cast-pagination-dots{display:flex;align-items:center;gap:6px;margin-right:8px}
-.cast-dot{width:6px;height:6px;border-radius:3px;border:none;background:var(--seam);cursor:pointer;padding:0;transition:all .3s cubic-bezier(.16,1,.3,1)}
-.cast-dot:hover{background:var(--ash)}
-.cast-dot:focus-visible{outline:2px solid var(--ember);outline-offset:3px}
-.cast-dot.is-active{width:18px;background:var(--ember)}
-.cast-position{font-size:12px;font-variant-numeric:tabular-nums;color:var(--ash);margin-right:8px}
-.cast-gallery-controls button{display:grid;place-items:center;width:46px;height:46px;border:1px solid var(--seam);color:var(--bone);cursor:pointer}
-.cast-gallery-controls button:hover{background:var(--bone);color:var(--stage)}
-.cast-reel{position:relative;display:flex;gap:28px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:var(--ember) var(--stage);padding:12px 4.2vw 32px;scroll-padding-inline:4.2vw}
-.cast-performer{flex:0 0 clamp(250px,28vw,360px);min-width:0;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--seam);padding-bottom:24px;scroll-margin-inline:4.2vw;text-decoration:none;color:inherit;transition:transform .35s cubic-bezier(.16,1,.3,1),border-color .35s}
-.cast-performer:hover,.cast-performer:focus-visible,.cast-performer.is-active{border-bottom-color:var(--ember)}
-.cast-effigy{aspect-ratio:4/5;overflow:hidden;background:var(--stage)}
-.cast-effigy img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 18%;transition:transform .5s cubic-bezier(.16,1,.3,1)}
-.cast-performer:hover img,.cast-performer:focus-visible img{transform:scale(1.025)}
-.cast-name{font:32px "Ma Shan Zheng","Bodoni Moda",serif;display:flex;align-items:center;justify-content:space-between;gap:20px;color:var(--bone)}
-.cast-name svg{color:var(--ember);transform:rotate(-45deg);flex-shrink:0}
-.cast-character-role{font-size:13px;line-height:1.7;color:var(--ash)}
-.cast-medium{font-size:11px;color:var(--ash);margin-top:auto}
-.cast-ribbon{overflow:hidden;border-block:1px solid var(--seam)}
+.theatre-enter{border:0;border-bottom:1px solid var(--ember)}.encounter-glass .invite-note{background:none;color:var(--ash);padding:0;border:0;border-radius:0;font-size:13px}
+/* Three-row stage gallery: top poster strip, center full 4:5 artboards, bottom reverse detail strip. */
+.theatre-cast{padding-block:96px 108px;background:var(--stage)}
+.theatre-cast-heading{max-width:1320px;margin-inline:auto;display:flex;align-items:end;justify-content:space-between;gap:32px;padding-bottom:36px}
+.theatre-cast-heading h2{font-size:clamp(32px,3.3vw,48px);line-height:1.25;text-wrap:balance}
+.theatre-cast-heading p{max-width:30em;margin:0;font-size:13px;line-height:1.7;color:var(--ash)}
+.cast-carousel{--cast-gap:28px;position:relative;margin-inline:-4.2vw;min-width:0}
+.cast-ribbon{overflow:hidden;border-block:1px solid var(--seam);-webkit-mask-image:linear-gradient(90deg,transparent 0,var(--stage) 4%,var(--stage) 96%,transparent 100%);mask-image:linear-gradient(90deg,transparent 0,var(--stage) 4%,var(--stage) 96%,transparent 100%)}
 .cast-ribbon-reel{display:flex;gap:18px;overflow-x:auto;scrollbar-width:none;pointer-events:none;padding:18px 4.2vw}
 .cast-ribbon-reel::-webkit-scrollbar{display:none}
-.cast-poster-print{flex:0 0 132px;height:132px;position:relative}
+.cast-poster-print{position:relative;flex:0 0 136px;height:136px;border:1px solid var(--seam);background:var(--stage);overflow:hidden}
 .cast-poster-print img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 18%}
-.cast-poster-tag{position:absolute;bottom:0;inset-inline:0;padding:3px 6px;background:linear-gradient(to top,rgba(17,16,15,0.95),rgba(17,16,15,0.3) 70%,transparent);font-size:11px;color:var(--bone);text-align:center;font-family:"Ma Shan Zheng","Bodoni Moda",serif;letter-spacing:0.04em}
-.cast-detail-print{position:relative;flex:0 0 248px;height:128px;overflow:hidden}
+.cast-poster-tag{position:absolute;bottom:0;inset-inline:0;padding:4px 6px;background:var(--stage);border-top:1px solid var(--seam);font:13px/1.2 "Ma Shan Zheng","Bodoni Moda",serif;color:var(--bone);text-align:center;letter-spacing:.04em}
+.cast-detail-print{position:relative;flex:0 0 248px;height:128px;border:1px solid var(--seam);background:var(--stage);overflow:hidden}
 .cast-detail-print img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 24%}
-.cast-detail-print span{position:absolute;bottom:0;right:0;padding:5px 12px;background:var(--stage);font-size:12px;color:var(--bone)}
-@media(min-width:1800px){.cast-poster-print{flex-basis:180px;height:180px}}
-@media(max-width:700px){.cast-carousel{margin-inline:-24px}.cast-gallery-tools{padding:20px 24px 8px;gap:10px}.cast-gallery-tools p{max-width:20ch;font-size:12px;line-height:1.4}.cast-pagination-dots{display:none}.cast-position{font-size:11px;margin-right:2px;letter-spacing:0.04em}.cast-gallery-controls button{width:40px;height:40px}.cast-reel{gap:20px;padding:12px 24px 24px;scroll-padding-inline:24px}.cast-performer{flex-basis:76vw;max-width:340px;scroll-margin-inline:24px}.cast-name{font-size:30px}.cast-poster-print{flex-basis:100px;height:100px}.cast-ribbon-reel{padding:12px 24px;gap:12px}.cast-detail-print{flex-basis:190px;height:92px}}
-@media(prefers-reduced-motion:reduce){.cast-reel{scroll-snap-type:x proximity}.cast-performer{scroll-snap-align:start}.cast-effigy img{transition:none}.cast-performer:hover img,.cast-performer:focus-visible img{transform:none}}
+.cast-detail-print span{position:absolute;bottom:0;right:0;padding:5px 12px;background:var(--stage);border-top:1px solid var(--seam);border-left:1px solid var(--seam);font-size:13px;color:var(--bone)}
+.cast-gallery-tools{max-width:1320px;margin-inline:auto;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 4.2vw 14px}
+.cast-gallery-tools p{margin:0;font-size:13px;color:var(--ash);line-height:1.65}
+.cast-gallery-controls{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.cast-pagination-dots{display:flex;align-items:center;gap:6px;margin-right:8px}
+.cast-dot{width:8px;height:6px;border-radius:0;border:none;background:var(--seam);cursor:pointer;padding:0;transition:width .25s cubic-bezier(.23,1,.32,1),background-color .25s cubic-bezier(.23,1,.32,1)}
+.cast-dot:hover{background:var(--ash)}
+.cast-dot:focus-visible{outline:2px solid var(--ember);outline-offset:3px}
+.cast-dot.is-active{width:22px;background:var(--ember)}
+.cast-position{margin-right:10px;font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--bone)}
+.cast-position>span{color:var(--ash);margin-left:4px}
+.theatre .cast-arrow{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;min-height:44px;padding:0;border:1px solid var(--seam);border-radius:0;color:var(--bone);background:transparent;cursor:pointer;transition:background-color .2s ease-out,color .2s ease-out,border-color .2s ease-out}
+.theatre .cast-arrow:hover:not(:disabled){background:var(--bone);color:var(--stage);border-color:var(--bone)}
+.theatre .cast-arrow:disabled{opacity:.3;cursor:not-allowed}
+.cast-reel{position:relative;display:flex;gap:var(--cast-gap);overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:var(--ember) var(--stage);padding:12px 4.2vw 32px;scroll-padding-inline:4.2vw}
+.cast-reel:focus-visible{outline:2px solid var(--ember);outline-offset:-2px}
+.cast-performer{flex:0 0 clamp(260px,28vw,360px);min-width:0;display:flex;flex-direction:column;color:var(--bone);border-bottom:1px solid var(--seam);scroll-margin-inline:4.2vw;transition:border-color .25s cubic-bezier(.23,1,.32,1)}
+.cast-performer:hover,.cast-performer:focus-visible,.cast-performer.is-active{border-bottom-color:var(--ember)}
+.theatre .cast-performer:focus-visible{outline-offset:4px}
+.cast-effigy{aspect-ratio:4/5;overflow:hidden;background:var(--stage);border:1px solid var(--seam)}
+.cast-effigy img{display:block;width:100%;height:100%;object-fit:contain;transition:transform .3s cubic-bezier(.23,1,.32,1)}
+.cast-performer:hover img,.cast-performer:focus-visible img{transform:scale(1.02)}
+.cast-caption{display:flex;flex:1;flex-direction:column;padding-top:16px}
+.cast-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;line-height:1.4;color:var(--ash);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.cast-index{color:var(--ember)}
+.cast-medium{color:var(--ash)}
+.cast-name{margin-top:8px;font:400 clamp(22px,2.2vw,34px)/1.2 "Ma Shan Zheng","Bodoni Moda",serif;color:var(--bone);overflow-wrap:anywhere;text-wrap:balance}
+.theatre[lang="en"] .cast-name{font-family:"Bodoni Moda",Georgia,serif}
+.cast-character-role{display:block;margin-top:8px;font-size:13px;line-height:1.7;color:var(--ash)}
+.cast-invitation{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;padding-block:20px 18px;color:var(--ember);font-size:13px;line-height:1.5}
+.cast-invitation svg{flex-shrink:0;transition:transform .2s cubic-bezier(.23,1,.32,1)}
+.cast-performer:hover .cast-invitation svg,.cast-performer:focus-visible .cast-invitation svg{transform:translateX(4px)}
+@media(min-width:1800px){.cast-poster-print{flex-basis:176px;height:176px}}
+@media(max-width:900px){.theatre-cast-heading{display:block}.theatre-cast-heading p{max-width:none;margin-top:14px}.cast-pagination-dots{display:none}}
+@media(max-width:700px){.theatre-cast{padding:68px 24px 76px}.theatre-cast-heading{padding-bottom:24px}.theatre-cast-heading p{font-size:13px}.cast-carousel{margin-inline:-24px;--cast-gap:20px}.cast-gallery-tools{flex-wrap:wrap;padding:20px 24px 10px;gap:12px}.cast-gallery-tools p{font-size:13px;max-width:none}.cast-gallery-controls{margin-left:auto}.cast-position{margin-right:8px;font-size:13px}.cast-reel{padding:12px 24px 24px;scroll-padding-inline:24px}.cast-performer{flex-basis:78vw;max-width:340px;scroll-margin-inline:24px}.cast-poster-print{flex-basis:104px;height:104px}.cast-ribbon-reel{padding:12px 24px;gap:12px}.cast-detail-print{flex-basis:190px;height:96px}}
+@media(prefers-reduced-motion:reduce){.cast-reel{scroll-snap-type:x proximity}.cast-performer{scroll-snap-align:start}.cast-effigy img,.cast-invitation svg,.cast-dot{transition:none}.cast-performer:hover img,.cast-performer:focus-visible img,.cast-performer:hover .cast-invitation svg,.cast-performer:focus-visible .cast-invitation svg{transform:none}}
 .theatre-stage .alternate-performer{top:7%;bottom:5%;left:43%;right:9%}.immersive-encounter button{border-radius:0}.immersive-encounter .encounter-glass{border-radius:14px}
 @media(max-width:700px){.theatre-stage .alternate-performer{top:10%;bottom:30%;left:10%;right:10%}}
-@media(prefers-reduced-motion:reduce){.cast-effigy img{transition:none}.cast-performer:hover img,.cast-performer:focus-visible img{transform:none}}
 .encounter-text{margin-top:18px;border-top:1px solid var(--seam);padding-top:16px}.encounter-text label{font-size:12px;color:var(--ash)}.encounter-text>div{display:flex;gap:10px;margin-top:10px}.encounter-text input{min-width:0;flex:1;background:#11100f;color:var(--bone);border:1px solid var(--seam);padding:10px;font-size:16px;caret-color:var(--ember)}.encounter-text button{padding:10px;min-height:44px;font-size:13px;color:var(--ember)}
 .theatre:not([data-phase="landing"]) .theatre-skip{display:none}.encounter-glass .voice-text-fallback{margin:16px 0;padding:16px 0;border-top:1px solid var(--seam);display:flex;flex-wrap:wrap;gap:10px}.encounter-glass .voice-text-fallback label{flex-basis:100%;font-size:12px;color:var(--ash)}.encounter-glass .voice-text-fallback input{min-width:0;flex:1;background:var(--stage);color:var(--bone);border:1px solid var(--seam);padding:10px;font-size:16px;caret-color:var(--ember)}.encounter-glass .voice-text-fallback button{min-height:44px;padding:10px;font-size:13px;color:var(--ember)}

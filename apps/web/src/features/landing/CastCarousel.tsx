@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -12,19 +12,12 @@ import type { CharacterId, Locale } from "@nether/contracts";
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 const artwork = (id: CharacterId) => `/artworks/${id}.webp`;
-const railIds = [...CHARACTER_IDS, ...CHARACTER_IDS];
+const railIds = [...CHARACTER_IDS, ...CHARACTER_IDS, ...CHARACTER_IDS];
 
 function Arrow({ back = false }: { back?: boolean }) {
   return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      style={back ? { transform: "rotate(180deg)" } : undefined}
-    >
-      <path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.5" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d={back ? "M20 12H5m6-6-6 6 6 6" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -39,99 +32,333 @@ export function CastCarousel({
   onChoose: (id: CharacterId) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const reel = useRef<HTMLDivElement>(null);
   const posters = useRef<HTMLDivElement>(null);
+  const reel = useRef<HTMLDivElement>(null);
   const details = useRef<HTMLDivElement>(null);
+
+  const hoveredRef = useRef(false);
+  const focusedRef = useRef(false);
+  const manualPauseUntilRef = useRef(0);
+  const posRef = useRef({ poster: 0, reel: 0, detail: 0 });
+
   const [current, setCurrent] = useState(0);
+  const [visible, setVisible] = useState({ first: 0, last: 0 });
   const zh = locale === "zh";
+
+  const pauseAutoplay = useCallback((holdMs = 2800) => {
+    manualPauseUntilRef.current = Math.max(manualPauseUntilRef.current, performance.now() + holdMs);
+  }, []);
+
+  const syncPosition = useCallback(() => {
+    const element = reel.current;
+    if (!element || element.children.length === 0) return;
+
+    const firstCard = element.children[0] as HTMLElement;
+    let nearest = 0;
+    let nearestDist = Infinity;
+    for (let index = 0; index < element.children.length; index++) {
+      const card = element.children[index] as HTMLElement;
+      const dist = Math.abs(card.offsetLeft - firstCard.offsetLeft - element.scrollLeft);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = index;
+      }
+    }
+    setCurrent(nearest);
+
+    const bounds = element.getBoundingClientRect();
+    const shown = Array.from(element.children).flatMap((child, index) => {
+      const card = child.getBoundingClientRect();
+      const overlap = Math.min(card.right, bounds.right) - Math.max(card.left, bounds.left);
+      return card.width > 0 && overlap >= card.width * 0.45 ? [index] : [];
+    });
+    const nextFirst = shown[0] ?? nearest;
+    const nextLast = shown.at(-1) ?? nearest;
+    setVisible((prev) =>
+      prev.first === nextFirst && prev.last === nextLast ? prev : { first: nextFirst, last: nextLast }
+    );
+  }, []);
+
+  useEffect(() => {
+    const element = reel.current;
+    if (!element) return;
+    const observer = new ResizeObserver(syncPosition);
+    observer.observe(element);
+    syncPosition();
+    return () => observer.disconnect();
+  }, [syncPosition]);
 
   useGSAP(
     () => {
       const media = gsap.matchMedia();
+
       media.add("(prefers-reduced-motion: no-preference)", () => {
-        // Native scroll containers stay available for touch, keyboard and the buttons.
-        // ScrollTrigger advances them when the page's vertical position changes.
-        for (const [element, reverse] of [
-          [posters.current, false],
-          [reel.current, false],
-          [details.current, true],
-        ] as const) {
-          if (!element) continue;
-          const distance = () => Math.max(0, element.scrollWidth - element.clientWidth);
-          gsap.fromTo(
-            element,
-            { scrollLeft: reverse ? distance : 0 },
-            {
-              scrollLeft: reverse ? 0 : distance,
-              ease: "none",
-              scrollTrigger: {
-                trigger: element,
-                start: "clamp(top bottom)",
-                end: "clamp(bottom top)",
-                scrub: 0.65,
-                invalidateOnRefresh: true,
-              },
+        const posterEl = posters.current;
+        const reelEl = reel.current;
+        const detailEl = details.current;
+        if (!posterEl || !reelEl || !detailEl) return;
+
+        const maxScroll = (el: HTMLElement) => Math.max(0, el.scrollWidth - el.clientWidth);
+
+        const initPositions = () => {
+          const maxD = maxScroll(detailEl);
+          posRef.current.poster = posterEl.scrollLeft;
+          posRef.current.reel = reelEl.scrollLeft;
+          if (detailEl.scrollLeft <= 2 && maxD > 0) {
+            detailEl.scrollLeft = maxD;
+            posRef.current.detail = maxD;
+          } else {
+            posRef.current.detail = detailEl.scrollLeft;
+          }
+        };
+
+        initPositions();
+        const detailResize = new ResizeObserver(() => {
+          if (posRef.current.detail <= 2 && maxScroll(detailEl) > 0) {
+            const maxD = maxScroll(detailEl);
+            detailEl.scrollLeft = maxD;
+            posRef.current.detail = maxD;
+          }
+        });
+        detailResize.observe(detailEl);
+
+        let pendingWheelDelta = 0;
+        let lastScrollY = window.scrollY;
+        let lastWheelAt = 0;
+
+        // GSAP ScrollTrigger monitors page scroll progress and syncs smooth scroll deltas into the three rails
+        const scrollTrigger = ScrollTrigger.create({
+          trigger: root.current,
+          start: "clamp(top bottom)",
+          end: "clamp(bottom top)",
+          scrub: 0.65,
+          invalidateOnRefresh: true,
+          onUpdate: () => {
+            const nowScrollY = window.scrollY;
+            const dy = nowScrollY - lastScrollY;
+            lastScrollY = nowScrollY;
+            // Ignore instant programmatic jumps (e.g. anchor jump / scrollIntoViewIfNeeded)
+            if (Math.abs(dy) > 0.5 && Math.abs(dy) <= 320 && performance.now() - lastWheelAt > 48) {
+              pendingWheelDelta += dy * 0.55;
             }
-          );
-        }
+          },
+        });
+
+        // GSAP mouse wheel listener with exponential damping (referencing oodai.space)
+        const onWheel = (event: WheelEvent) => {
+          const container = root.current;
+          if (!container) return;
+          const rect = container.getBoundingClientRect();
+          if (rect.bottom < -120 || rect.top > window.innerHeight + 120) return;
+
+          const primary =
+            Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+          if (Math.abs(primary) < 0.5) return;
+
+          lastWheelAt = performance.now();
+          lastScrollY = window.scrollY;
+          pendingWheelDelta += primary * 0.72;
+        };
+
+        window.addEventListener("wheel", onWheel, { passive: true });
+
+        let inView = false;
+        const containerEl = root.current;
+        const viewObserver = new IntersectionObserver(
+          ([entry]) => {
+            inView = Boolean(entry?.isIntersecting);
+          },
+          { rootMargin: "120px 0px" }
+        );
+        if (containerEl) viewObserver.observe(containerEl);
+
+        // Continuous GSAP ticker for automatic scrolling + damped mouse wheel scrubbing
+        const tick = (_time: number, deltaTime: number) => {
+          if (!inView && Math.abs(pendingWheelDelta) <= 0.05) return;
+          const elapsed = Math.min(64, Math.max(8, deltaTime || 16.67));
+          const now = performance.now();
+          const isPaused =
+            !inView || hoveredRef.current || focusedRef.current || now < manualPauseUntilRef.current;
+
+          const damping = 1 - Math.exp(-elapsed / 80);
+          const wheelStep =
+            Math.abs(pendingWheelDelta) > 0.05 ? pendingWheelDelta * damping : pendingWheelDelta;
+          pendingWheelDelta -= wheelStep;
+
+          const autoPoster = isPaused ? 0 : (40 * elapsed) / 1000;
+          const autoReel = isPaused ? 0 : (46 * elapsed) / 1000;
+          const autoDetail = isPaused ? 0 : (40 * elapsed) / 1000;
+
+          const maxP = maxScroll(posterEl);
+          if (maxP > 0) {
+            posRef.current.poster += autoPoster + wheelStep;
+            if (posRef.current.poster >= maxP) posRef.current.poster -= maxP;
+            else if (posRef.current.poster < 0) posRef.current.poster += maxP;
+            posterEl.scrollLeft = posRef.current.poster;
+          }
+
+          const maxD = maxScroll(detailEl);
+          if (maxD > 0) {
+            posRef.current.detail -= autoDetail + wheelStep;
+            if (posRef.current.detail <= 0) posRef.current.detail += maxD;
+            else if (posRef.current.detail > maxD) posRef.current.detail -= maxD;
+            detailEl.scrollLeft = posRef.current.detail;
+          }
+
+          const maxR = maxScroll(reelEl);
+          if (maxR > 0) {
+            const reelDelta = autoReel + (focusedRef.current ? 0 : wheelStep * 0.92);
+            if (Math.abs(reelDelta) > 0.02) {
+              posRef.current.reel += reelDelta;
+              if (posRef.current.reel >= maxR) posRef.current.reel = 0;
+              else if (posRef.current.reel < 0) posRef.current.reel = maxR;
+              reelEl.scrollLeft = posRef.current.reel;
+            } else {
+              posRef.current.reel = reelEl.scrollLeft;
+            }
+          }
+        };
+
+        gsap.ticker.add(tick);
+
+        return () => {
+          gsap.ticker.remove(tick);
+          window.removeEventListener("wheel", onWheel);
+          scrollTrigger.kill();
+          viewObserver.disconnect();
+          detailResize.disconnect();
+          gsap.killTweensOf(reelEl);
+          posterEl.scrollLeft = 0;
+          reelEl.scrollLeft = 0;
+          detailEl.scrollLeft = 0;
+          posRef.current = { poster: 0, reel: 0, detail: 0 };
+        };
       });
+
       return () => media.revert();
     },
     { scope: root }
   );
 
-  function move(direction: number) {
-    const element = reel.current;
-    if (!element) return;
-    const distance = element.scrollWidth - element.clientWidth;
-    const first = element.children[0] as HTMLElement;
-    const second = element.children[1] as HTMLElement;
-    const atEnd = element.scrollLeft >= distance - 2;
-    const atStart = element.scrollLeft <= 2;
-    const left =
-      direction > 0 && atEnd
-        ? 0
-        : direction < 0 && atStart
-        ? distance
-        : element.scrollLeft + direction * (second.offsetLeft - first.offsetLeft);
-    element.scrollTo({
-      left,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-    });
-  }
+  const animateReelTo = useCallback(
+    (targetLeft: number) => {
+      const element = reel.current;
+      if (!element) return;
+      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
+      const clamped = Math.max(0, Math.min(distance, targetLeft));
+      pauseAutoplay(3200);
+      gsap.killTweensOf(element);
 
-  const scrollToIndex = useCallback((index: number) => {
-    const element = reel.current;
-    if (!element || !element.children[index]) return;
-    const first = element.children[0] as HTMLElement;
-    const target = element.children[index] as HTMLElement;
-    const distance = element.scrollWidth - element.clientWidth;
-    const targetOffset =
-      index === 0
-        ? 0
-        : index === CHARACTER_IDS.length - 1
-        ? distance
-        : target.offsetLeft - first.offsetLeft;
-    element.scrollTo({
-      left: Math.max(0, Math.min(distance, targetOffset)),
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-    });
-    setCurrent(index);
-  }, []);
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        element.scrollLeft = clamped;
+        posRef.current.reel = clamped;
+        syncPosition();
+      } else {
+        gsap.to(element, {
+          scrollLeft: clamped,
+          duration: 0.28,
+          ease: "power3.out",
+          overwrite: true,
+          onUpdate: () => {
+            posRef.current.reel = element.scrollLeft;
+            syncPosition();
+          },
+          onComplete: () => {
+            posRef.current.reel = element.scrollLeft;
+            syncPosition();
+          },
+        });
+      }
+    },
+    [pauseAutoplay, syncPosition]
+  );
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      move(-1);
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      move(1);
-    }
-  }, []);
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      const element = reel.current;
+      if (!element || !element.children[index]) return;
+      const first = element.children[0] as HTMLElement;
+      const target = element.children[index] as HTMLElement;
+      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
+      const targetOffset =
+        index === 0
+          ? 0
+          : index === CHARACTER_IDS.length - 1
+          ? distance
+          : target.offsetLeft - first.offsetLeft;
+      setCurrent(index);
+      animateReelTo(targetOffset);
+    },
+    [animateReelTo]
+  );
+
+  const move = useCallback(
+    (direction: number) => {
+      const element = reel.current;
+      if (!element || element.children.length < 2) return;
+      const distance = Math.max(0, element.scrollWidth - element.clientWidth);
+      const first = element.children[0] as HTMLElement;
+      const second = element.children[1] as HTMLElement;
+      const step = second.offsetLeft - first.offsetLeft;
+      const atEnd = element.scrollLeft >= distance - 2;
+      const atStart = element.scrollLeft <= 2;
+      const nextLeft =
+        direction > 0 && atEnd
+          ? 0
+          : direction < 0 && atStart
+          ? distance
+          : element.scrollLeft + direction * step;
+      animateReelTo(nextLeft);
+    },
+    [animateReelTo]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const element = reel.current;
+      if (!element) return;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === "Home") {
+        setCurrent(0);
+        animateReelTo(0);
+      } else if (event.key === "End") {
+        setCurrent(CHARACTER_IDS.length - 1);
+        animateReelTo(element.scrollWidth - element.clientWidth);
+      } else {
+        move(event.key === "ArrowLeft" ? -1 : 1);
+      }
+    },
+    [animateReelTo, move]
+  );
+
+  const firstLabel = String(visible.first + 1).padStart(2, "0");
+  const lastLabel = String(visible.last + 1).padStart(2, "0");
 
   return (
-    <div ref={root} className="cast-carousel">
-      {/* Top row: character posters driven by ScrollTrigger */}
+    <div
+      ref={root}
+      className="cast-carousel"
+      onPointerEnter={() => {
+        hoveredRef.current = true;
+      }}
+      onPointerLeave={() => {
+        hoveredRef.current = false;
+        pauseAutoplay(1200);
+      }}
+      onTouchStart={() => pauseAutoplay(3500)}
+      onFocusCapture={() => {
+        focusedRef.current = true;
+        pauseAutoplay(3500);
+      }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          focusedRef.current = false;
+          pauseAutoplay(1200);
+        }
+      }}
+    >
+      {/* Top Row: Character posters ribbon driven by GSAP auto-scroll & ScrollTrigger/wheel */}
       <div className="cast-ribbon cast-poster-ribbon" aria-hidden="true">
         <div ref={posters} className="cast-ribbon-reel">
           {railIds.map((id, index) => (
@@ -150,7 +377,7 @@ export function CastCarousel({
         </div>
       </div>
 
-      {/* Control Bar: Lead text + Dots + Counter + Prev/Next Buttons */}
+      {/* Control Bar: Lead copy + Pagination ticks + Range counter + Square Prev/Next */}
       <div className="cast-gallery-tools">
         <p>{zh ? "七位来客，各有故事。选一位，开聊。" : "Seven guests. Seven stories. Choose your company."}</p>
         <div className="cast-gallery-controls">
@@ -175,10 +402,21 @@ export function CastCarousel({
               );
             })}
           </div>
-          <span className="cast-position" aria-hidden="true">
-            {String(current + 1).padStart(2, "0")} / 07
+          <span
+            className="cast-position"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-label={
+              zh
+                ? `正在显示第 ${visible.first + 1} 至 ${visible.last + 1} 位，共七位角色`
+                : `Showing characters ${visible.first + 1} to ${visible.last + 1} of seven`
+            }
+          >
+            {firstLabel}
+            {firstLabel !== lastLabel && `–${lastLabel}`} <span>/ 07</span>
           </span>
           <button
+            className="cast-arrow"
             type="button"
             onClick={() => move(-1)}
             aria-label={zh ? "上一位角色" : "Previous character"}
@@ -186,6 +424,7 @@ export function CastCarousel({
             <Arrow back />
           </button>
           <button
+            className="cast-arrow"
             type="button"
             onClick={() => move(1)}
             aria-label={zh ? "下一位角色" : "Next character"}
@@ -195,7 +434,7 @@ export function CastCarousel({
         </div>
       </div>
 
-      {/* Center Reel: Horizontal Carousel */}
+      {/* Center Row: Seven full 4:5 character artboards */}
       <div
         ref={reel}
         className="cast-reel"
@@ -204,30 +443,36 @@ export function CastCarousel({
         aria-label={zh ? "角色原画，左右滑动选择角色" : "Character artwork, scroll sideways to choose"}
         onKeyDown={handleKeyDown}
         onScroll={() => {
-          const element = reel.current;
-          if (!element) return;
-          const first = element.children[0] as HTMLElement;
-          let nearest = 0;
-          for (let index = 1; index < element.children.length; index++) {
-            const card = element.children[index] as HTMLElement;
-            if (
-              Math.abs(card.offsetLeft - first.offsetLeft - element.scrollLeft) <
-              Math.abs((element.children[nearest] as HTMLElement).offsetLeft - first.offsetLeft - element.scrollLeft)
-            ) {
-              nearest = index;
-            }
+          if (reel.current) {
+            posRef.current.reel = reel.current.scrollLeft;
           }
-          setCurrent(nearest);
+          syncPosition();
         }}
       >
-        {CHARACTER_IDS.map((id) => {
+        {CHARACTER_IDS.map((id, index) => {
           const character = getCharacter(id);
+          const isActive = index === current;
           return (
             <Link
               key={id}
               href={href(id)}
-              className="cast-performer"
+              className={`cast-performer${isActive ? " is-active" : ""}`}
               aria-label={`${zh ? "与这位角色开聊" : "Talk to this character"}: ${character.name[locale]}`}
+              onFocus={() => {
+                setCurrent(index);
+                const element = reel.current;
+                if (!element) return;
+                const first = element.children[0] as HTMLElement;
+                const card = element.children[index] as HTMLElement;
+                if (!first || !card) return;
+                const cardLeft = card.offsetLeft - first.offsetLeft;
+                const cardRight = cardLeft + card.offsetWidth;
+                if (cardLeft < element.scrollLeft || cardRight > element.scrollLeft + element.clientWidth) {
+                  element.scrollLeft = Math.max(0, cardLeft);
+                  posRef.current.reel = element.scrollLeft;
+                  syncPosition();
+                }
+              }}
               onClick={(event) => {
                 if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
@@ -235,28 +480,34 @@ export function CastCarousel({
               }}
             >
               <div className="cast-effigy">
-                <Image src={artwork(id)} width={960} height={1200} alt="" unoptimized loading="eager" />
+                <Image src={artwork(id)} width={960} height={1200} alt="" unoptimized loading="lazy" />
               </div>
-              <span className="cast-name">
-                {character.name[locale]}
-                <Arrow />
-              </span>
-              <span className="cast-character-role">{character.role[locale]}</span>
-              <span className="cast-medium">
-                {id === "meng-po"
-                  ? zh
-                    ? "3D 形象 · 实时语音"
-                    : "3D Avatar · Live voice"
-                  : zh
-                  ? "角色原画 · 实时语音"
-                  : "Original artwork · Live voice"}
-              </span>
+              <div className="cast-caption">
+                <div className="cast-meta">
+                  <span className="cast-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="cast-medium">
+                    {id === "meng-po"
+                      ? zh
+                        ? "3D 形象 · 实时语音"
+                        : "3D Avatar · Live voice"
+                      : zh
+                      ? "角色原画 · 实时语音"
+                      : "Original artwork · Live voice"}
+                  </span>
+                </div>
+                <span className="cast-name">{character.name[locale]}</span>
+                <span className="cast-character-role">{character.role[locale]}</span>
+                <span className="cast-invitation">
+                  <span>{zh ? "与 TA 开聊" : "Start a conversation"}</span>
+                  <Arrow />
+                </span>
+              </div>
             </Link>
           );
         })}
       </div>
 
-      {/* Bottom row: reverse ScrollTrigger rail */}
+      {/* Bottom Row: Reverse-flowing artwork detail ribbon */}
       <div className="cast-ribbon cast-detail-ribbon" aria-hidden="true">
         <div ref={details} className="cast-ribbon-reel">
           {railIds.map((id, index) => (
