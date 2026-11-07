@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
+import { Observer } from "gsap/Observer";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { CHARACTER_IDS, getCharacter } from "@nether/party-core";
 import type { CharacterId, Locale } from "@nether/contracts";
 
-gsap.registerPlugin(useGSAP, ScrollTrigger);
+gsap.registerPlugin(useGSAP, ScrollTrigger, Observer);
 
 const artwork = (id: CharacterId) => `/artworks/${id}.webp`;
 const railIds = [...CHARACTER_IDS, ...CHARACTER_IDS, ...CHARACTER_IDS];
@@ -36,7 +37,7 @@ export function CastCarousel({
   const reel = useRef<HTMLDivElement>(null);
   const details = useRef<HTMLDivElement>(null);
 
-  const hoveredRef = useRef(false);
+  const controlsHoveredRef = useRef(false);
   const focusedRef = useRef(false);
   const manualPauseUntilRef = useRef(0);
   const posRef = useRef({ poster: 0, reel: 0, detail: 0 });
@@ -122,45 +123,68 @@ export function CastCarousel({
         });
         detailResize.observe(detailEl);
 
-        let pendingWheelDelta = 0;
-        let lastScrollY = window.scrollY;
+        const boostState = { target: 0, current: 0 };
+        let lastBoostApplied = 0;
+        let lastProgress = -1;
         let lastWheelAt = 0;
 
-        // GSAP ScrollTrigger monitors page scroll progress and syncs smooth scroll deltas into the three rails
+        const applyScrollBoost = (delta: number) => {
+          boostState.target += delta;
+          gsap.to(boostState, {
+            current: boostState.target,
+            duration: 0.42,
+            ease: "power3.out",
+            overwrite: "auto",
+          });
+        };
+
+        // GSAP ScrollTrigger listens to page vertical scroll progress across the carousel section
         const scrollTrigger = ScrollTrigger.create({
           trigger: root.current,
           start: "clamp(top bottom)",
           end: "clamp(bottom top)",
           scrub: 0.65,
           invalidateOnRefresh: true,
-          onUpdate: () => {
-            const nowScrollY = window.scrollY;
-            const dy = nowScrollY - lastScrollY;
-            lastScrollY = nowScrollY;
-            // Ignore instant programmatic jumps (e.g. anchor jump / scrollIntoViewIfNeeded)
-            if (Math.abs(dy) > 0.5 && Math.abs(dy) <= 320 && performance.now() - lastWheelAt > 48) {
-              pendingWheelDelta += dy * 0.55;
+          onUpdate: (self) => {
+            if (lastProgress < 0) {
+              lastProgress = self.progress;
+              return;
+            }
+            const dProgress = self.progress - lastProgress;
+            lastProgress = self.progress;
+            // Ignore single-frame programmatic anchor jumps (> 0.35 progress)
+            if (
+              Math.abs(dProgress) > 0.0004 &&
+              Math.abs(dProgress) <= 0.35 &&
+              performance.now() - lastWheelAt > 48
+            ) {
+              const span = Math.max(720, maxScroll(reelEl));
+              applyScrollBoost(dProgress * span * 1.15);
             }
           },
         });
 
-        // GSAP mouse wheel listener with exponential damping (referencing oodai.space)
-        const onWheel = (event: WheelEvent) => {
-          const container = root.current;
-          if (!container) return;
-          const rect = container.getBoundingClientRect();
-          if (rect.bottom < -120 || rect.top > window.innerHeight + 120) return;
+        // GSAP Observer listens directly to mouse wheel and touch scroll gestures
+        const wheelObserver = Observer.create({
+          target: window,
+          type: "wheel,touch",
+          wheelSpeed: 1,
+          onChange: (self) => {
+            const container = root.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            if (rect.bottom < -120 || rect.top > window.innerHeight + 120) return;
 
-          const primary =
-            Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-          if (Math.abs(primary) < 0.5) return;
+            const deltaY = self.deltaY ?? 0;
+            const deltaX = self.deltaX ?? 0;
+            const primary = Math.abs(deltaY) >= Math.abs(deltaX) ? deltaY : deltaX;
+            if (Math.abs(primary) < 0.5) return;
 
-          lastWheelAt = performance.now();
-          lastScrollY = window.scrollY;
-          pendingWheelDelta += primary * 0.72;
-        };
-
-        window.addEventListener("wheel", onWheel, { passive: true });
+            lastWheelAt = performance.now();
+            lastProgress = scrollTrigger.progress;
+            applyScrollBoost(primary * 1.25);
+          },
+        });
 
         let inView = false;
         const containerEl = root.current;
@@ -168,30 +192,31 @@ export function CastCarousel({
           ([entry]) => {
             inView = Boolean(entry?.isIntersecting);
           },
-          { rootMargin: "120px 0px" }
+          { rootMargin: "160px 0px" }
         );
         if (containerEl) viewObserver.observe(containerEl);
 
-        // Continuous GSAP ticker for automatic scrolling + damped mouse wheel scrubbing
+        // Continuous GSAP ticker for automatic scrolling + GSAP-tweened mouse wheel boost
         const tick = (_time: number, deltaTime: number) => {
-          if (!inView && Math.abs(pendingWheelDelta) <= 0.05) return;
+          const boostStep = boostState.current - lastBoostApplied;
+          lastBoostApplied = boostState.current;
+
+          if (!inView && Math.abs(boostStep) <= 0.02) return;
           const elapsed = Math.min(64, Math.max(8, deltaTime || 16.67));
           const now = performance.now();
           const isPaused =
-            !inView || hoveredRef.current || focusedRef.current || now < manualPauseUntilRef.current;
+            !inView ||
+            controlsHoveredRef.current ||
+            focusedRef.current ||
+            now < manualPauseUntilRef.current;
 
-          const damping = 1 - Math.exp(-elapsed / 80);
-          const wheelStep =
-            Math.abs(pendingWheelDelta) > 0.05 ? pendingWheelDelta * damping : pendingWheelDelta;
-          pendingWheelDelta -= wheelStep;
-
-          const autoPoster = isPaused ? 0 : (40 * elapsed) / 1000;
-          const autoReel = isPaused ? 0 : (46 * elapsed) / 1000;
-          const autoDetail = isPaused ? 0 : (40 * elapsed) / 1000;
+          const autoPoster = isPaused ? 0 : (52 * elapsed) / 1000;
+          const autoReel = isPaused ? 0 : (58 * elapsed) / 1000;
+          const autoDetail = isPaused ? 0 : (52 * elapsed) / 1000;
 
           const maxP = maxScroll(posterEl);
           if (maxP > 0) {
-            posRef.current.poster += autoPoster + wheelStep;
+            posRef.current.poster += autoPoster + boostStep;
             if (posRef.current.poster >= maxP) posRef.current.poster -= maxP;
             else if (posRef.current.poster < 0) posRef.current.poster += maxP;
             posterEl.scrollLeft = posRef.current.poster;
@@ -199,7 +224,7 @@ export function CastCarousel({
 
           const maxD = maxScroll(detailEl);
           if (maxD > 0) {
-            posRef.current.detail -= autoDetail + wheelStep;
+            posRef.current.detail -= autoDetail + boostStep;
             if (posRef.current.detail <= 0) posRef.current.detail += maxD;
             else if (posRef.current.detail > maxD) posRef.current.detail -= maxD;
             detailEl.scrollLeft = posRef.current.detail;
@@ -207,14 +232,12 @@ export function CastCarousel({
 
           const maxR = maxScroll(reelEl);
           if (maxR > 0) {
-            const reelDelta = autoReel + (focusedRef.current ? 0 : wheelStep * 0.92);
-            if (Math.abs(reelDelta) > 0.02) {
+            const reelDelta = autoReel + (focusedRef.current ? 0 : boostStep * 0.95);
+            if (Math.abs(reelDelta) > 0.01) {
               posRef.current.reel += reelDelta;
               if (posRef.current.reel >= maxR) posRef.current.reel = 0;
               else if (posRef.current.reel < 0) posRef.current.reel = maxR;
               reelEl.scrollLeft = posRef.current.reel;
-            } else {
-              posRef.current.reel = reelEl.scrollLeft;
             }
           }
         };
@@ -223,10 +246,11 @@ export function CastCarousel({
 
         return () => {
           gsap.ticker.remove(tick);
-          window.removeEventListener("wheel", onWheel);
+          wheelObserver.kill();
           scrollTrigger.kill();
           viewObserver.disconnect();
           detailResize.disconnect();
+          gsap.killTweensOf(boostState);
           gsap.killTweensOf(reelEl);
           posterEl.scrollLeft = 0;
           reelEl.scrollLeft = 0;
@@ -339,13 +363,6 @@ export function CastCarousel({
     <div
       ref={root}
       className="cast-carousel"
-      onPointerEnter={() => {
-        hoveredRef.current = true;
-      }}
-      onPointerLeave={() => {
-        hoveredRef.current = false;
-        pauseAutoplay(1200);
-      }}
       onTouchStart={() => pauseAutoplay(3500)}
       onFocusCapture={() => {
         focusedRef.current = true;
@@ -380,7 +397,16 @@ export function CastCarousel({
       {/* Control Bar: Lead copy + Pagination ticks + Range counter + Square Prev/Next */}
       <div className="cast-gallery-tools">
         <p>{zh ? "七位来客，各有故事。选一位，开聊。" : "Seven guests. Seven stories. Choose your company."}</p>
-        <div className="cast-gallery-controls">
+        <div
+          className="cast-gallery-controls"
+          onPointerEnter={() => {
+            controlsHoveredRef.current = true;
+          }}
+          onPointerLeave={() => {
+            controlsHoveredRef.current = false;
+            pauseAutoplay(1200);
+          }}
+        >
           <div
             className="cast-pagination-dots"
             role="tablist"
@@ -443,8 +469,10 @@ export function CastCarousel({
         aria-label={zh ? "角色原画，左右滑动选择角色" : "Character artwork, scroll sideways to choose"}
         onKeyDown={handleKeyDown}
         onScroll={() => {
-          if (reel.current) {
-            posRef.current.reel = reel.current.scrollLeft;
+          const element = reel.current;
+          if (element && Math.abs(element.scrollLeft - posRef.current.reel) > 6) {
+            posRef.current.reel = element.scrollLeft;
+            pauseAutoplay(2400);
           }
           syncPosition();
         }}
