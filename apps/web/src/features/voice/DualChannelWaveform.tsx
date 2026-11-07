@@ -18,8 +18,8 @@ export function deriveWaveformState(view: Pick<VoiceView, "phase" | "muted" | "f
   return "listening";
 }
 const labels = {
-  zh: { listening: "正在听你说", thinking: "正在思考", speaking: "正在说话", interrupted: "已打断，请说", muted: "麦克风已静音", reconnecting: "正在连接", ended: "对话未进行" },
-  en: { listening: "Listening to you", thinking: "Thinking", speaking: "Speaking", interrupted: "Interrupted — your turn", muted: "Microphone muted", reconnecting: "Connecting", ended: "Conversation inactive" },
+  zh: { listening: "正在聆听你的声音", thinking: "正在思考", speaking: "正在说话", interrupted: "已打断，请说", muted: "麦克风已静音", reconnecting: "正在连接", ended: "对话未进行" },
+  en: { listening: "Listening for your voice", thinking: "Thinking", speaking: "Speaking", interrupted: "Interrupted — your turn", muted: "Microphone muted", reconnecting: "Connecting", ended: "Conversation inactive" },
 };
 const bars = Array.from({ length: WAVEFORM_BARS }, (_, index) => index);
 
