@@ -33,3 +33,27 @@ test("queue rejects a slow-consumer backlog without overwriting queued audio", (
   queue.push(new Float32Array(23999).fill(0.5)); expect(() => queue.push(new Float32Array(2))).toThrow("PLAYBACK_BACKLOG");
   const out = new Float32Array(128); queue.render(out); expect(out[0]).toBe(0.5);
 });
+
+test("adaptive jitter buffer prebuffers before rendering to prevent micro-underflow stutter", () => {
+  const queue = new PlaybackQueue(48000, 24000, 12, { prebufferSamples: 1000, adaptiveRate: true });
+  const out = new Float32Array(128);
+  // Push less than prebuffer watermark: output stays silent (buffering)
+  queue.push(new Float32Array(500).fill(0.8));
+  queue.render(out);
+  expect(out.every(value => value === 0)).toBe(true);
+  expect(queue.consumed).toBe(0);
+
+  // Push remaining samples to surpass prebuffer watermark: playback begins
+  queue.push(new Float32Array(600).fill(0.8));
+  queue.render(out);
+  expect(out[0]).toBeCloseTo(0.8, 2);
+  expect(queue.consumed).toBeGreaterThan(0);
+
+  // Clearing resets buffering watermark
+  queue.clear();
+  expect(queue.consumed).toBe(0);
+  queue.push(new Float32Array(200).fill(0.4));
+  queue.render(out);
+  expect(out.every(value => value === 0)).toBe(true);
+});
+

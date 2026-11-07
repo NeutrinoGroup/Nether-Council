@@ -84,25 +84,57 @@ export function decodePcm16Base64ToFloat32(base64: string): Float32Array {
   return output;
 }
 
-/** Bounded PCM queue rendered on the audio thread, including 24k -> device-rate conversion. */
+export type PlaybackQueueOptions = {
+  prebufferSamples?: number;
+  adaptiveRate?: boolean;
+};
+
+/** Bounded PCM queue rendered on the audio thread, including 24k -> device-rate conversion and adaptive jitter buffering. */
 export class PlaybackQueue {
   private samples: Float32Array;
   private read = 0;
   private write = 0;
   private size = 0;
   private fraction = 0;
+  private buffering = false;
+  private readonly prebuffer: number;
+  private readonly adaptive: boolean;
   consumed = 0;
-  constructor(private outputRate: number, private inputRate = 24000, seconds = 12) {
+  constructor(
+    private outputRate: number,
+    private inputRate = 24000,
+    seconds = 12,
+    options: PlaybackQueueOptions = {}
+  ) {
     this.samples = new Float32Array(inputRate * seconds);
+    this.prebuffer = Math.max(0, options.prebufferSamples ?? 0);
+    this.adaptive = options.adaptiveRate ?? false;
+    this.buffering = this.prebuffer > 0;
   }
   push(input: Float32Array) {
     if (input.length > this.samples.length - this.size) throw new Error("PLAYBACK_BACKLOG");
     for (const value of input) { this.samples[this.write] = value; this.write = (this.write + 1) % this.samples.length; }
     this.size += input.length;
+    if (this.buffering && this.size >= this.prebuffer) {
+      this.buffering = false;
+    }
   }
   render(output: Float32Array) {
     output.fill(0);
-    const step = this.inputRate / this.outputRate;
+    if (this.buffering || this.size === 0) {
+      if (this.prebuffer > 0) this.buffering = true;
+      return;
+    }
+    let rate = 1.0;
+    if (this.adaptive) {
+      const bufferMs = (this.size / this.inputRate) * 1000;
+      if (bufferMs < 60) {
+        rate = 0.95; // Gently stretch playback to let incoming network packets catch up
+      } else if (bufferMs > 300) {
+        rate = 1.05; // Gently compress playback to prevent queue bloat and reduce latency
+      }
+    }
+    const step = (this.inputRate / this.outputRate) * rate;
     for (let i = 0; i < output.length && this.size > 0; i++) {
       const a = this.samples[this.read];
       const b = this.size > 1 ? this.samples[(this.read + 1) % this.samples.length] : a;
@@ -110,8 +142,14 @@ export class PlaybackQueue {
       this.fraction += step;
       const take = Math.min(this.size, Math.floor(this.fraction));
       this.read = (this.read + take) % this.samples.length; this.size -= take; this.consumed += take; this.fraction -= take;
-      if (!this.size) this.fraction = 0;
+      if (!this.size) {
+        this.fraction = 0;
+        if (this.prebuffer > 0) this.buffering = true;
+      }
     }
   }
-  clear() { this.read = this.write = this.size = this.fraction = this.consumed = 0; }
+  clear() {
+    this.read = this.write = this.size = this.fraction = this.consumed = 0;
+    this.buffering = this.prebuffer > 0;
+  }
 }
