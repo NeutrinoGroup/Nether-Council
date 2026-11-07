@@ -46,7 +46,7 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
   const isZh = locale === "zh";
 
   if (loading) {
-    return <div style={{ fontSize: 12, color: "var(--ash, #8a948c)" }}>...</div>;
+    return <div style={{ fontSize: 12, color: "var(--ash, #bcb0a0)" }}>...</div>;
   }
 
   if (!user) {
@@ -58,10 +58,10 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            background: "#1c211e",
+            background: "#171410",
             color: "#eee7d9",
-            border: "1px solid #3d463f",
-            borderRadius: 20,
+            border: "1px solid #39342d",
+            borderRadius: 0,
             padding: "6px 14px",
             fontSize: 13,
             cursor: "pointer",
@@ -76,10 +76,10 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
         {process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_NETHER_AUTH_DEMO === "true" && <button
           onClick={() => void loginDemo()}
           style={{
-            background: "none",
-            border: "1px dashed #3d463f",
-            borderRadius: 14,
-            color: "#8a948c",
+            background: "#171410",
+            border: "1px solid #39342d",
+            borderRadius: 0,
+            color: "#bcb0a0",
             padding: "4px 8px",
             fontSize: 11,
             cursor: "pointer",
@@ -103,16 +103,17 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
               width={28}
               height={28}
               unoptimized
-              style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid #ff7a29" }}
+              style={{ width: 28, height: 28, borderRadius: 0, border: "1px solid #f6a15d" }}
             />
           ) : (
             <div
               style={{
                 width: 28,
                 height: 28,
-                borderRadius: "50%",
-                background: "#ff7a29",
-                color: "#161917",
+                borderRadius: 0,
+                border: "1px solid #f6a15d",
+                background: "#171410",
+                color: "#eee7d9",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -134,15 +135,14 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            background: "#e0813c",
-            color: "#fff",
-            border: 0,
-            borderRadius: 16,
+            background: "#eee7d9",
+            color: "#11100f",
+            border: "1px solid #f6a15d",
+            borderRadius: 0,
             padding: "5px 12px",
             fontSize: 12,
             fontWeight: 600,
             cursor: "pointer",
-            boxShadow: "0 2px 8px rgba(224, 129, 60, 0.3)",
           }}
           title={isZh ? "分享专属链接或二维码" : "Share link or QR code"}
         >
@@ -155,7 +155,8 @@ export function UserNavBadge({ locale = "zh" }: { locale?: Locale }) {
           style={{
             background: "none",
             border: 0,
-            color: "#8a948c",
+            borderRadius: 0,
+            color: "#bcb0a0",
             fontSize: 12,
             cursor: "pointer",
             padding: "4px 6px",
