@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
 import type { CharacterId, Locale } from "@nether/contracts";
 import { CHARACTERS, CHARACTER_IDS, getCharacter, normalizeNickname } from "@nether/party-core";
 import { useAudioReactive, type AudioLevels } from "./useAudioReactive";
+import { DualChannelWaveform } from "./DualChannelWaveform";
 import { ImmersiveEncounter } from "./ImmersiveEncounter";
 import { VoiceTextInput } from "./VoiceTextInput";
 import { preloadDemo } from "./demo";
@@ -16,6 +17,7 @@ import { UserNavBadge } from "../auth/UserNavBadge";
 import { useAuth } from "../auth/useAuth";
 import { errorText, words } from "./words";
 
+const emptyAudioNodes = {};
 let clientHydrated = false;
 const subscribeHydration = (notify: () => void) => {
   if (!clientHydrated) { clientHydrated = true; queueMicrotask(notify); }
@@ -60,19 +62,7 @@ export function VoiceTrial({
     return () => { document.removeEventListener("visibilitychange", onHidden); client.current?.stop(); };
   }, []);
 
-  useEffect(() => {
-    let frame = 0;
-    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-    const tick = () => {
-      const level = client.current?.measurePlayback() ?? 0;
-      band.current?.style.setProperty("--level", String(reduced.matches ? 0 : Math.min(1, level * 7)));
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  const readNodes = useCallback(() => client.current?.analysers() ?? {}, []);
+  const readNodes = useCallback(() => client.current?.analysers() ?? emptyAudioNodes, []);
   const audio = useAudioReactive(readNodes, immersive?.audio);
   const readRms = useCallback(() => client.current?.rms() ?? 0, []);
 
@@ -249,11 +239,7 @@ export function VoiceTrial({
             </div>
           )}
           {view.result && <IdentityCard result={view.result} initialNickname={nickname} locale={locale} invite={invite} />}
-          <div className="audio-band" ref={band} aria-hidden="true">
-            {Array.from({ length: 39 }, (_, i) => (
-              <span key={i} style={{ "--amplitude": String(0.25 + ((i * 7) % 11) / 14) } as CSSProperties} />
-            ))}
-          </div>
+          <DualChannelWaveform view={view} audio={audio} locale={locale} characterName={charMeta.name[locale]} variant="stage" bandRef={band} />
         </section>
 
         <aside className="voice-setup" aria-label={locale === "zh" ? "开聊准备" : "Before you talk"}>
