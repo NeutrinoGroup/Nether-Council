@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CharacterId, Locale } from "@nether/contracts";
+import { readIdentity } from "@/lib/authSession";
 import { serverConfig } from "@/shared/server/config";
 import { CampaignClaims, cookieToken, readSession, ReferralClaims, sameOrigin, signTicket, verifyTicket } from "@/shared/server/tickets";
 
@@ -18,8 +19,16 @@ export async function POST(request: Request) {
   const config = serverConfig();
   const claims = readSession(cookieToken(request), config.sessionSecret);
   const now = Date.now();
-  // Accounts and public referral codes do not grant paid voice access.
-  const campaign = claims?.campaign ?? (input.invite ? verifyTicket(input.invite, config.campaignSecret, CampaignClaims, now) : undefined);
+  let campaign = claims?.campaign ?? (input.invite ? verifyTicket(input.invite, config.campaignSecret, CampaignClaims, now) : undefined);
+  let campaignToken = claims ? undefined : input.invite;
+  if (!campaign || campaign.campaignId !== config.campaignId || campaign.expiresAt < now + 235_000) {
+    let identity;
+    try { identity = readIdentity(request); } catch { /* Unconfigured identity signing grants no access. */ }
+    if (identity?.kind === "identity") {
+      campaign = { kind: "campaign", campaignId: config.campaignId, issuedAt: now, expiresAt: now + 7 * 86_400_000 };
+      campaignToken = undefined;
+    }
+  }
   if (!campaign || campaign.campaignId !== config.campaignId || campaign.expiresAt < now + 235_000) return Response.json({ error: "INVITE_REQUIRED" }, { status: 401 });
   if (config.campaignSecret.length < 32 || (claims && config.referralSecret.length < 32)) return Response.json({ error: "SHARING_UNAVAILABLE" }, { status: 503 });
 
@@ -27,7 +36,7 @@ export async function POST(request: Request) {
     kind: "referral", campaignId: campaign.campaignId, sourceSessionId: claims.session.id,
     issuedAt: now, expiresAt: Math.min(now + 7 * 86_400_000, campaign.expiresAt),
   }), config.referralSecret) : undefined;
-  const campaignToken = claims ? signTicket(campaign, config.campaignSecret) : input.invite!;
+  campaignToken ??= signTicket(campaign, config.campaignSecret);
 
   const origin = new URL(request.url).origin;
   const shareUrl = new URL("/play", origin);

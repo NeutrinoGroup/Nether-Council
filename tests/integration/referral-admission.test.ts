@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { POST as refer } from "../../apps/web/src/app/api/referrals/route";
 import { POST as admit } from "../../apps/web/src/app/api/sessions/route";
-import { readSession, signTicket, verifyTicket, ReferralClaims } from "../../apps/web/src/shared/server/tickets";
+import { CampaignClaims, readSession, signTicket, verifyTicket, ReferralClaims } from "../../apps/web/src/shared/server/tickets";
+import { identityToken } from "../../apps/web/src/lib/authSession";
 
 const secret = "referral-admission-fixture-secret".repeat(2);
 const origin = "https://party.test";
@@ -10,13 +11,63 @@ const now = 1_800_000_000_000;
 const campaign = () => ({ kind: "campaign", campaignId: "pilot", issuedAt: now, expiresAt: now + 3_600_000 });
 const request = (path: string, body?: object, cookie = "") => new Request(`${origin}${path}`, { method: "POST", headers: { Origin: origin, Cookie: cookie, "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const cookieOf = (response: Response) => response.headers.get("set-cookie")!.split(";")[0];
+const identityCookie = () => `nc_identity=${identityToken("did:nether:google:123", false, { email: "alex@example.test", name: "alex ander", referralCode: "nc_alex" })}`;
 beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(now);
-  for (const key of ["SESSION_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET"]) vi.stubEnv(key, secret);
+  for (const key of ["AUTH_SIGNING_SECRET", "SESSION_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET"]) vi.stubEnv(key, secret);
   vi.stubEnv("NEXT_PUBLIC_CAMPAIGN_ID", "pilot");
   vi.stubEnv("VOICE_ENABLED", "true"); vi.stubEnv("QWEN_DUPLEX_API_KEY", "fixture-not-a-key");
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+
+test("a signed identity can share a seven-day invitation without an entry invite", async () => {
+  const shared = await refer(request("/api/referrals", { locale: "en", characterId: "vampire" }, identityCookie()));
+  expect(shared.status).toBe(200);
+  expect(shared.headers.get("cache-control")).toBe("no-store");
+  const data = await shared.json();
+  const url = new URL(data.shareUrl);
+  expect(url.origin).toBe(origin);
+  expect(url.pathname).toBe("/play");
+  expect(url.searchParams.get("character")).toBe("vampire");
+  expect(url.searchParams.get("lang")).toBe("en");
+  expect(url.searchParams.has("ref")).toBe(false);
+  expect(data.referral).toBeUndefined();
+  expect(verifyTicket(url.searchParams.get("invite")!, secret, CampaignClaims, now)).toEqual({
+    ...campaign(), expiresAt: now + 7 * 86_400_000,
+  });
+  expect(data.expiresAt).toBe(now + 7 * 86_400_000);
+  const friend = await admit(request("/api/sessions", { invite: url.searchParams.get("invite"), locale: "en" }));
+  expect(friend.status).toBe(200);
+});
+
+test.each([undefined, "", "invalid.signature"])("a signed identity can start a voice session with invite %s", async invite => {
+  const admitted = await admit(request("/api/sessions", { invite, locale: "zh" }, identityCookie()));
+  expect(admitted.status).toBe(200);
+  expect(admitted.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Strict; Path=/api; Max-Age=235; Secure");
+  const { session } = await admitted.json();
+  const claims = readSession(cookieOf(admitted).slice("nc_session=".length), secret, now);
+  expect(claims?.session).toEqual(session);
+  expect(claims?.campaign).toEqual(campaign());
+  expect(claims?.sourceSessionId).toBeUndefined();
+});
+
+test.each(["", "nc_auth=account-does-not-grant-paid-voice", "nc_identity=forged.signature"])("unauthenticated requests cannot share or start without an invite (%s)", async cookie => {
+  const shared = await refer(request("/api/referrals", {}, cookie));
+  expect(shared.status).toBe(401);
+  expect(await shared.json()).toEqual({ error: "INVITE_REQUIRED" });
+  const admitted = await admit(request("/api/sessions", { locale: "zh" }, cookie));
+  expect(admitted.status).toBe(403);
+  expect(await admitted.json()).toEqual({ error: "FORBIDDEN" });
+  expect(admitted.headers.has("set-cookie")).toBe(false);
+});
+
+test("sharing without configured identity signing fails closed", async () => {
+  vi.stubEnv("AUTH_SIGNING_SECRET", "");
+  vi.stubEnv("SESSION_SIGNING_SECRET", "");
+  const shared = await refer(request("/api/referrals", {}));
+  expect(shared.status).toBe(401);
+  expect(await shared.json()).toEqual({ error: "INVITE_REQUIRED" });
+});
 
 test("an existing signed invitation survives sharing without login or a voice session", async () => {
   const invite = signTicket(campaign(), secret);

@@ -13,6 +13,7 @@ import { useVerdict } from "../verdict/useVerdict";
 import { IdentityCard } from "../card/IdentityCard";
 import { InAppBrowserBanner } from "./InAppBrowserBanner";
 import { UserNavBadge } from "../auth/UserNavBadge";
+import { useAuth } from "../auth/useAuth";
 import { errorText, words } from "./words";
 
 let clientHydrated = false;
@@ -37,6 +38,8 @@ export function VoiceTrial({
   immersive?: { audio: MutableRefObject<AudioLevels>; onView?: (view: VoiceView) => void; onClose: () => void };
 }) {
   const hydrated = useSyncExternalStore(subscribeHydration, hydratedSnapshot, serverSnapshot);
+  const { user } = useAuth();
+  const hasAccess = Boolean(invite || user);
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [characterId, setCharacterId] = useState<CharacterId>(initialCharacter);
   const [nickname, setNickname] = useState("");
@@ -107,7 +110,7 @@ export function VoiceTrial({
   };
 
   const start = () => {
-    if (!invite) return;
+    if (!hasAccess) return;
     resetVerdict();
     const name = normalizeNickname(nickname);
     setNickname(name);
@@ -332,12 +335,12 @@ export function VoiceTrial({
       </div>
 
       <footer className="voice-actions">
-        {(invite === "" || view.error) && <div className="entry-feedback">
-          {invite === "" && <p role="status" className="invite-note">{t.invite}</p>}
+        {(!hasAccess || view.error) && <div className="entry-feedback">
+          {!hasAccess && <p role="status" className="invite-note">{t.invite}</p>}
           {view.error && <p role="alert" className="error-note">{errorText(view.error, locale)}</p>}
         </div>}
         {!active ? (
-          <button className="start-button" onClick={start} disabled={!invite || !hydrated}>
+          <button className="start-button" onClick={start} disabled={!hasAccess || !hydrated}>
             {locale === "zh" ? `开麦，找${charMeta.name.zh}聊聊` : `Turn on mic & meet ${charMeta.name.en}`}
             <MicIcon />
           </button>
