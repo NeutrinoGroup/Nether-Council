@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { expect, test, type Browser, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Browser, type Page, type TestInfo, type WebSocketRoute } from "@playwright/test";
 import { Session } from "@nether/contracts";
 import { readSession, signTicket } from "../../apps/web/src/shared/server/tickets";
 
@@ -16,7 +16,9 @@ const invite = () => {
 const entry = (ticket: string) => `/play?${new URLSearchParams({ invite: ticket, character: "meng-po", lang: "zh" })}`;
 
 async function loginAndReadQr(page: Page, ticket: string, visitorId: string) {
-  await page.addInitScript(id => localStorage.setItem("nc_visitor_id", id), visitorId);
+  await page.addInitScript(id => {
+    if (location.protocol === "http:" || location.protocol === "https:") localStorage.setItem("nc_visitor_id", id);
+  }, visitorId);
   await page.goto(entry(ticket));
   const login = page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/google/exchange");
   await page.getByRole("button", { name: "体验登录", exact: true }).click();
@@ -52,8 +54,13 @@ async function admitFriend(browser: Browser, shareUrl: URL, visitorId: string, i
     baseURL: shareUrl.origin, permissions: ["microphone"], reducedMotion: "reduce",
     viewport: info.project.use.viewport, isMobile: info.project.use.isMobile, hasTouch: info.project.use.hasTouch,
   });
+  let page: Page | undefined;
+  let voiceSocket: WebSocketRoute | undefined;
+  let ended = false;
   try {
     await context.addInitScript(id => {
+      // Init scripts also run on the new page's opaque about:blank document.
+      if (location.protocol !== "http:" && location.protocol !== "https:") return;
       localStorage.setItem("nc_visitor_id", id);
       const Original = window.AudioContext;
       window.AudioContext = class extends Original {
@@ -62,7 +69,7 @@ async function admitFriend(browser: Browser, shareUrl: URL, visitorId: string, i
         }
       };
     }, visitorId);
-    const page = await context.newPage();
+    page = await context.newPage();
     const admitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/sessions");
     const sessionReady = admitted.then(async response => {
       expect(response.status()).toBe(200);
@@ -70,9 +77,11 @@ async function admitFriend(browser: Browser, shareUrl: URL, visitorId: string, i
       return Session.parse((await response.json()).session);
     });
     await page.routeWebSocket("**/api/ws", socket => {
+      voiceSocket = socket;
       let seq = 0;
       socket.onMessage(async raw => {
         const event = JSON.parse(String(raw));
+        if (event.type === "session.end") { ended = true; return; }
         if (event.type !== "session.start" && event.type !== "ping") return;
         const session = await sessionReady;
         const send = (payload: object) => socket.send(JSON.stringify({
@@ -104,8 +113,22 @@ async function admitFriend(browser: Browser, shareUrl: URL, visitorId: string, i
     expect(claims?.campaign.campaignId).toBe(campaignId);
     expect(claims?.sourceSessionId).toBe(sourceSessionId);
     expect((await context.cookies()).some(item => item.name === "nc_identity")).toBe(false);
+    await test.step("end the admitted conversation before browser disposal", async () => {
+      await page!.getByRole("button", { name: "结束对话", exact: true }).click();
+      await expect(page!.getByText("对话已结束", { exact: true })).toBeVisible();
+      await expect.poll(() => ended).toBe(true);
+    });
   } finally {
-    await context.close();
+    // Disposing a context with an active fake microphone and routed socket can
+    // hang Chromium on Linux. Close the socket and page before their context.
+    try {
+      await test.step("release friend socket and page", async () => {
+        await voiceSocket?.close({ code: 1000, reason: "Invitation assertion complete" });
+        await page?.close();
+      });
+    } finally {
+      await test.step("dispose friend context", () => context.close());
+    }
   }
 }
 

@@ -57,3 +57,10 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - run: pnpm test:e2e:invitation
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: invitation-failure-${{ github.run_attempt }}
+          path: artifacts/invitation-test-results/
+          if-no-files-found: ignore
+          retention-days: 7
