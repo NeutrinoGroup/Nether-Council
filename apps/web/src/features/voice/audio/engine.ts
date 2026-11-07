@@ -1,3 +1,4 @@
+import { encodePcmBase64, decodePcm16Base64ToFloat32 } from "@nether/party-core/audio";
 import { preloadAudioWorklet } from "./module";
 
 export class AudioEngine {
@@ -66,15 +67,13 @@ export class AudioEngine {
         if (onSpeech) {
           const view = new DataView(data); let power = 0;
           for (let i = 0; i < data.byteLength; i += 2) power += (view.getInt16(i, true) / 32768) ** 2;
-          const voiced = Math.sqrt(power / (data.byteLength / 2)) > 0.035;
+          const voiced = Math.sqrt(power / (data.byteLength / 2)) > 0.038;
           this.speechMs = voiced ? this.speechMs + 20 : 0;
           this.silenceMs = voiced ? 0 : this.silenceMs + 20;
           if (this.silenceMs >= 200) this.voiceActive = false;
-          if (!this.voiceActive && this.speechMs >= 60) { this.voiceActive = true; onSpeech(); }
+          if (!this.voiceActive && this.speechMs >= 40) { this.voiceActive = true; onSpeech(); }
         }
-        const bytes = new Uint8Array(data);
-        let text = ""; for (const byte of bytes) text += String.fromCharCode(byte);
-        onPcm(btoa(text));
+        onPcm(encodePcmBase64(new Uint8Array(data)));
       };
     } catch (error) { this.stopCapture(); throw error; }
   }
@@ -89,11 +88,7 @@ export class AudioEngine {
   play(base64: string) {
     if (!this.playback || this.disposed) return;
     if (this.overflow) throw new Error("PLAYBACK_BACKLOG");
-    const binary = atob(base64);
-    if (binary.length % 2 !== 0) throw new Error("Invalid PCM16");
-    const raw = Uint8Array.from(binary, c => c.charCodeAt(0)); const view = new DataView(raw.buffer);
-    const output = new Float32Array(raw.length / 2);
-    for (let i = 0; i < output.length; i++) output[i] = view.getInt16(i * 2, true) / 32768;
+    const output = decodePcm16Base64ToFloat32(base64);
     if (this.submitted - this.consumed + output.length > 24000 * 12) throw new Error("PLAYBACK_BACKLOG");
     this.submitted += output.length;
     this.playback.port.postMessage({ type: "push", generation: this.generation, samples: output.buffer }, [output.buffer]);
