@@ -5,7 +5,7 @@ import { loadLocalEnv } from "./lib/env";
 loadLocalEnv();
 const project = JSON.parse(readFileSync(".vercel/project.json", "utf8"));
 if (project.projectId !== "prj_K3yPg2pxZMVyV1NWPXoLGEBHMHe9" || project.orgId !== "team_mISG7YOUhrsdkFPulvYyYPGu") throw new Error("Unexpected deployment target");
-for (const name of ["SESSION_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "HOST_ACCESS_SECRET"]) {
+for (const name of ["SESSION_SIGNING_SECRET", "AUTH_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "HOST_ACCESS_SECRET"]) {
   if (!process.env[name]) {
     const value = randomBytes(32).toString("base64url");
     appendFileSync(".env.local", `\n${name}=${value}\n`, { mode: 0o600 });
@@ -18,7 +18,7 @@ const defaults: Record<string, string> = {
   QWEN_TEXT_BASE_URL: "https://maas.qianwenaiapi.com/compatible-mode/v1", QWEN_TEXT_MODEL: "qwen3.6-flash",
   HUNYUAN_3D_BASE_URL: "https://api.ai3d.cloud.tencent.com", VOICE_ENABLED: "false", NEXT_PUBLIC_CAMPAIGN_ID: "halloween-2026", NEXT_PUBLIC_SITE_URL: "https://nether-council.vercel.app",
 };
-const names = ["QWEN_DUPLEX_API_KEY", "QWEN_TEXT_API_KEY", "HUNYUAN_3D_API_KEY", ...Object.keys(defaults), "SESSION_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "HOST_ACCESS_SECRET", "NEXT_PUBLIC_SITE_URL"];
+const names = ["QWEN_DUPLEX_API_KEY", "QWEN_TEXT_API_KEY", "HUNYUAN_3D_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", ...Object.keys(defaults), "SESSION_SIGNING_SECRET", "AUTH_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "HOST_ACCESS_SECRET", "NEXT_PUBLIC_SITE_URL"];
 const entries = [...new Set(names)].flatMap(key => {
   const value = process.env[key] ?? defaults[key];
   return value ? [{ key, value, type: "encrypted", target: ["preview", "production"] }] : [];

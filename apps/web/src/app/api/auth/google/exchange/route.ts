@@ -5,7 +5,7 @@ import { AUTH_COOKIE, FLOW_COOKIE, demoEnabled, identityToken, readGoogleFlow, w
 import { sameOrigin } from "@/shared/server/tickets";
 import type { GoogleProfile } from "@/lib/googleAuth";
 const Input = z.object({ code: z.string().min(1).max(4096).optional(), state: z.string().min(1).max(128).optional(), id_token: z.literal("demo_verified_google_identity").optional() });
-const GoogleUser = z.object({ sub: z.string().min(1).max(100), email: z.email(), email_verified: z.literal(true), name: z.string().max(128).optional(), picture: z.url().max(512).optional() });
+const GoogleUser = z.object({ sub: z.string().min(1).max(100), email: z.email(), email_verified: z.literal(true), name: z.string().max(128).optional(), picture: z.url().max(1024).optional() });
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   let response: NextResponse;
@@ -36,9 +36,11 @@ export async function POST(request: Request) {
       googleUser = user.data;
     }
     const userId = `did:nether:google:${googleUser.sub}`;
-    const ticket = identityToken(userId, synthetic);
-    const user = await syncUserToDatabase({ id: userId, email: googleUser.email, name: googleUser.name || googleUser.email.split("@")[0], picture: googleUser.picture || null, bio: "Nether Council Visitor" });
-    const profile: GoogleProfile = { id: user.id, googleId: googleUser.sub, email: user.email, emailVerified: !synthetic, name: user.name, picture: user.picture, bio: user.bio, referralCode: user.referral_code!, synthetic };
+    const displayName = googleUser.name?.trim() || googleUser.email.split("@")[0];
+    const user = await syncUserToDatabase({ id: userId, email: googleUser.email, name: displayName, picture: googleUser.picture || null, bio: "Nether Council Visitor" });
+    const referralCode = user.referral_code!;
+    const ticket = identityToken(userId, synthetic, { email: user.email, name: user.name, picture: user.picture, bio: user.bio, referralCode });
+    const profile: GoogleProfile = { id: user.id, googleId: googleUser.sub, email: user.email, emailVerified: !synthetic, name: user.name, picture: user.picture, bio: user.bio, referralCode, synthetic };
     response = NextResponse.json({ success: true, profile }, { headers: { "Cache-Control": "no-store" } });
     writeCookie(response, AUTH_COOKIE, ticket, 3600, request);
   } catch { response = NextResponse.json({ error: "Identity service unavailable" }, { status: 503 }); }

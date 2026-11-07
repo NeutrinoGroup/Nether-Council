@@ -5,7 +5,9 @@ import type { NextResponse } from "next/server";
 export const AUTH_COOKIE = "nc_identity";
 export const FLOW_COOKIE = "nc_google_flow";
 const Expiring = { issuedAt: z.number(), expiresAt: z.number() };
-const Identity = z.strictObject({ kind: z.literal("identity"), userId: z.string().min(1).max(128), synthetic: z.boolean(), ...Expiring });
+const IdentityProfile = z.strictObject({ email: z.email(), name: z.string().min(1).max(128), picture: z.url().max(1024).nullable().optional(), bio: z.string().max(256).nullable().optional(), referralCode: z.string().min(1).max(64) });
+export type IdentityProfileClaims = z.infer<typeof IdentityProfile>;
+const Identity = z.strictObject({ kind: z.literal("identity"), userId: z.string().min(1).max(128), synthetic: z.boolean(), profile: IdentityProfile.optional(), ...Expiring });
 const Flow = z.strictObject({ kind: z.literal("google-flow"), state: z.string(), verifier: z.string(), redirectUri: z.string().url(), ...Expiring });
 function secret(): string {
   const value = process.env.AUTH_SIGNING_SECRET || process.env.SESSION_SIGNING_SECRET || "";
@@ -23,9 +25,9 @@ export function readIdentity(request: Request) {
   if (identity?.synthetic && process.env.NODE_ENV === "production") return;
   return identity;
 }
-export function identityToken(userId: string, synthetic: boolean): string {
+export function identityToken(userId: string, synthetic: boolean, profile?: IdentityProfileClaims): string {
   const now = Date.now();
-  return signTicket({ kind: "identity", userId, synthetic, issuedAt: now, expiresAt: now + 3600000 }, secret());
+  return signTicket({ kind: "identity", userId, synthetic, ...(profile ? { profile } : {}), issuedAt: now, expiresAt: now + 3600000 }, secret());
 }
 export function createGoogleFlow(redirectUri: string) {
   const state = randomBytes(32).toString("base64url");
