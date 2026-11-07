@@ -28,11 +28,11 @@ export const words = {
     states: {
       idle: "准备开聊",
       permission: "正在请求麦克风",
-      connecting: "正在接通孟婆",
+      connecting: "正在连接千问实时语音…",
       listening: "正在听你说",
       thinking: "正在思考你的故事",
       speaking: "孟婆正在说话",
-      reconnecting: "连接断开，正在恢复",
+      reconnecting: "连接中断，正在重新连接千问实时语音…",
       ended: "对话已结束",
       error: "暂时没接通",
     },
@@ -64,11 +64,11 @@ export const words = {
     states: {
       idle: "Ready when you are",
       permission: "Requesting microphone",
-      connecting: "Connecting to Meng Po",
+      connecting: "Connecting to Qwen Realtime…",
       listening: "Listening to you",
       thinking: "Thinking about your story",
       speaking: "Meng Po is speaking",
-      reconnecting: "Reconnecting",
+      reconnecting: "Connection interrupted. Reconnecting to Qwen Realtime…",
       ended: "Conversation ended",
       error: "Couldn’t connect",
     },
@@ -78,6 +78,8 @@ export const words = {
 export function errorText(code: string | undefined, locale: Locale) {
   const zh = locale === "zh";
   if (code === "MICROPHONE_DENIED") return zh ? "麦克风被拒绝了。请在地址栏允许麦克风后重试。" : "Microphone access was denied. Allow it in your address bar, then try again.";
+  if (code === "MICROPHONE_TIMEOUT") return zh ? "等待麦克风许可超时。请允许麦克风后重新开麦。" : "Microphone permission timed out. Allow access, then turn on your mic again.";
+  if (code === "NETWORK_TIMEOUT" || code === "RECONNECT_EXHAUSTED") return zh ? "暂时无法连接千问实时语音。请检查网络后重新开麦。" : "Couldn’t connect to Qwen Realtime. Check your connection, then turn on your mic again.";
   if (code === "FORBIDDEN") return zh ? "活动邀请已失效。请使用主持人提供的新链接。" : "This event invitation is no longer valid. Use a new link from your host.";
   if (code === "VOICE_DISABLED") return zh ? "语音入口暂时关闭，请稍后再来。" : "Voice entry is temporarily closed. Please try later.";
   return zh ? "语音连接遇到问题。请检查网络，再重新开麦。" : "Voice ran into a problem. Check your connection, then start again.";

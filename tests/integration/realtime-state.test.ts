@@ -24,10 +24,10 @@ beforeEach(() => {
 });
 afterEach(() => { client.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-test("fallback triggers at exactly 3s; stale provider events cannot revive audio or actions", async () => {
+test("opt-in fallback waits 15s; stale provider events cannot revive audio or actions", async () => {
   await client.start("en", "fixture");
   const old = Socket.instances[0];
-  await vi.advanceTimersByTimeAsync(2999); expect(view.demo).not.toBe(true);
+  await vi.advanceTimersByTimeAsync(14999); expect(view.demo).not.toBe(true);
   await vi.advanceTimersByTimeAsync(1); expect(view).toMatchObject({ demo: true, demoReason: "NETWORK_TIMEOUT", phase: "speaking" });
   expect(audio.stopCapture).toHaveBeenCalled(); expect(old.readyState).toBe(3);
   const calls = audio.play.mock.calls.length;
@@ -77,16 +77,16 @@ test("normal silence stays live with pongs; speech-stopped starts the reply dead
   send({ type: "response.started", responseId: "r1" }); send({ type: "response.done", responseId: "r1" });
   for (let i = 0; i < 10; i++) { await vi.advanceTimersByTimeAsync(1000); send({ type: "pong" }); }
   expect(view.demo).not.toBe(true);
-  send({ type: "speech.stopped" }); await vi.advanceTimersByTimeAsync(2999); expect(view.demo).not.toBe(true);
+  send({ type: "speech.stopped" }); await vi.advanceTimersByTimeAsync(14999); expect(view.demo).not.toBe(true);
   await vi.advanceTimersByTimeAsync(1); expect(view.demo).toBe(true);
 });
 
-test("heartbeat fails over after 3s without pong; live text uses the typed transport", async () => {
+test("opt-in heartbeat fallback waits 15s for pong; live text uses the typed transport", async () => {
   await client.start("en", "fixture"); send({ type: "session.ready", session });
   send({ type: "response.started", responseId: "r1" }); send({ type: "response.done", responseId: "r1" });
   client.submitText(" hello "); expect(Socket.instances[0].sent).toContainEqual(expect.objectContaining({ type: "text.submit", text: "hello" }));
   send({ type: "response.started", responseId: "r2" }); send({ type: "response.done", responseId: "r2" });
-  await vi.advanceTimersByTimeAsync(3999); expect(view.demo).not.toBe(true);
+  await vi.advanceTimersByTimeAsync(15999); expect(view.demo).not.toBe(true);
   await vi.advanceTimersByTimeAsync(1); expect(view.demo).toBe(true);
 });
 
@@ -94,9 +94,91 @@ test("permission completion after timeout cannot reconnect or retain microphone 
   let allow: (() => void) | undefined;
   audio.start.mockImplementationOnce(() => new Promise<void>(resolve => { allow = resolve; }));
   const starting = client.start("en", "fixture");
-  await vi.advanceTimersByTimeAsync(3000); expect(view.demo).toBe(true);
+  await vi.advanceTimersByTimeAsync(14999); expect(view.demo).not.toBe(true);
+  await vi.advanceTimersByTimeAsync(1); expect(view.demo).toBe(true);
   const stops = audio.stopCapture.mock.calls.length;
   allow!(); await starting;
   expect(audio.stopCapture.mock.calls.length).toBeGreaterThan(stops);
   expect(Socket.instances).toHaveLength(0);
+});
+
+function liveClient() {
+  client = new VoiceClient(v => { view = v; }, { demoFallback: false, networkTimeoutMs: 15000, permissionTimeoutMs: 15000 });
+}
+
+function expectNoDemo() {
+  expect(view.demo).not.toBe(true);
+  expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).startsWith("/demo/"))).toBe(false);
+}
+
+test("live connection permits a 25s upstream handshake and delayed first audio without demo", async () => {
+  liveClient();
+  await client.start("en", "fixture");
+  const socket = Socket.instances[0]; socket.onopen?.();
+  await vi.advanceTimersByTimeAsync(26000);
+  expect(socket.readyState).toBe(Socket.OPEN);
+  expect(view.phase).toBe("connecting");
+  send({ type: "session.ready", session });
+  send({ type: "response.started", responseId: "slow" });
+  await vi.advanceTimersByTimeAsync(20000);
+  expectNoDemo();
+  send({ type: "audio.delta", responseId: "slow", audio: "AAE=" });
+  expect(view.phase).toBe("speaking");
+  expect(audio.play).toHaveBeenCalledExactlyOnceWith("AAE=");
+});
+
+test("live reconnect keeps the same session and resumes provider audio without demo", async () => {
+  liveClient();
+  await client.start("en", "fixture"); send({ type: "session.ready", session });
+  const old = Socket.instances[0]; old.close(); old.onclose?.({ code: 1006 });
+  expect(view).toMatchObject({ phase: "reconnecting", reconnects: 1 });
+  await vi.advanceTimersByTimeAsync(5000);
+  const next = Socket.instances[1]; next.onopen?.();
+  expect(next.sent[0]).toMatchObject({ type: "session.start", sessionId: session.id, epoch: 1 });
+  send({ type: "session.ready", session, epoch: 1, seq: 0 }, next);
+  send({ type: "audio.delta", responseId: "resumed", audio: "AAE=", epoch: 1, seq: 1 }, next);
+  expect(view).toMatchObject({ phase: "speaking", session });
+  expectNoDemo();
+});
+
+test("denied live microphone reports an error and never admits a session or plays demo", async () => {
+  liveClient(); audio.start.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+  await client.start("en", "fixture");
+  expect(view).toMatchObject({ phase: "error", error: "MICROPHONE_DENIED" });
+  expect(audio.stop).toHaveBeenCalledOnce();
+  expect(fetch).not.toHaveBeenCalled(); expect(audio.play).not.toHaveBeenCalled();
+  expectNoDemo();
+});
+
+test("live permission times out cleanly after 15s and ignores a late permission grant", async () => {
+  liveClient();
+  let allow!: () => void;
+  audio.start.mockImplementationOnce(() => new Promise<void>(resolve => { allow = resolve; }));
+  const starting = client.start("en", "fixture");
+  await vi.advanceTimersByTimeAsync(14999); expect(view.phase).toBe("permission");
+  await vi.advanceTimersByTimeAsync(1);
+  expect(view).toMatchObject({ phase: "error", error: "MICROPHONE_TIMEOUT" });
+  allow(); await starting;
+  expect(audio.stopCapture).toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  expectNoDemo();
+});
+
+test("live admission times out after 15s, aborts fetch and ignores its late result", async () => {
+  liveClient();
+  let admit!: (response: Response) => void;
+  vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>(resolve => { admit = resolve; }));
+  const starting = client.start("en", "fixture");
+  await vi.advanceTimersByTimeAsync(14999); expect(view.phase).toBe("connecting");
+  await vi.advanceTimersByTimeAsync(1);
+  expect(view).toMatchObject({ phase: "error", error: "NETWORK_TIMEOUT" });
+  expect(vi.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(true);
+  admit(new Response(JSON.stringify({ session }))); await starting;
+  expect(Socket.instances).toHaveLength(0); expectNoDemo();
+});
+
+test("manual demo remains available with automatic fallback disabled", async () => {
+  liveClient(); client.enterDemo("MANUAL", "zh"); await vi.advanceTimersByTimeAsync(0);
+  expect(view).toMatchObject({ demo: true, demoReason: "MANUAL", phase: "speaking" });
+  expect(audio.start).not.toHaveBeenCalled(); expect(Socket.instances).toHaveLength(0);
+  expect(audio.play).toHaveBeenCalledOnce();
 });
