@@ -76,6 +76,7 @@ export type ServerMessage = z.infer<typeof ServerMessage>;
 export const TelemetryEvent = z.strictObject({
   eventId: Id, sessionId: Id.optional(), name: z.enum(["entry_viewed", "conversation_started", "conversation_completed", "card_rendered", "card_download_clicked", "card_download_created", "share_invoked", "invite_copied", "referred_conversation_started", "connection_error", "latency"]),
   at: z.number().int().nonnegative(), characterId: CharacterId.optional(), locale: Locale.optional(),
+  campaignId: z.string().min(1).max(80).optional(), mode: z.enum(["personal", "host"]).optional(), visitorId: Id.optional(),
   sourceSessionId: Id.optional(), metric: z.enum(["connect_ms", "first_audio_ms", "stop_ms", "translation_ms", "result_ms"]).optional(), value: z.number().min(0).max(300_000).optional(),
 });
 export type TelemetryEvent = z.infer<typeof TelemetryEvent>;

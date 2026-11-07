@@ -10,7 +10,11 @@
 | `nether.cache` | 命名空间 + 不含正文的 key + version | 模型、call_id、JSON 结果、有效期和更新时间；模型/版本不匹配即 miss | 身份结果最多 24 小时，公共资源最多 7 天；读取严格检查过期 |
 | `nether.outbox` | 一次待分发事件 / UUID；event_key 唯一 | call_id、事件类型、白名单 payload、状态、尝试次数、下次执行时间、租约 token/期限、错误码 | 完成/死信默认保留 7 天；待处理事件不自动删除 |
 
-`calls` 中尚无来源的指标保持 NULL 或默认值，不伪造数据。`card_save_count` 仅对应实际生成下载文件事件；`share_invoked` 表示唤起分享，不代表平台发布成功；朋友真正开始对话使用已验签的 `source_session_id`。匿名入口浏览、点击下载和故事正文不进入 outbox。漏斗使用各阶段非空的会话数，避免重复事件造成虚假转化。
+`calls` 中尚无来源的指标保持 NULL 或默认值，不伪造数据。`card_save_count` 仅对应实际生成下载文件事件；`share_invoked` 表示唤起分享，不代表平台发布成功；朋友真正开始对话使用已验签的 `source_session_id`。匿名入口浏览和故事正文不进入 outbox；点击下载事件可记录，但不增加生成下载文件计数。漏斗使用各阶段非空的会话数，避免重复事件造成虚假转化。
+
+2026-11-07 接线补充：`/api/sessions` 将可选匿名 `visitorId` 绑定进会话签名；`/api/events` 从签名覆盖活动、模式、角色、语言、来源会话与访客上下文，清除网页伪造的字段。随机 UUID 不包含昵称、故事或设备指纹，也不是可信真人身份。Python 将 `visitor_id`、`source_session_id` 放入现有 outbox 白名单 payload，不增加表或列，兼容没有访客标识的旧事件。
+
+报表从首次有效故事的 `conversation_started` 推导好友开聊，按活动与匿名访客去重，排除来源同设备和已开聊访客；来源缺失、访客未知或来源仅在之后出现时单列 unknown。卡片预览可见且结果非 fallback 才发送 `conversation_completed`。这些是软件事件与采集窗口内估算，无法代替真人保存、实体扫码或现场人数。
 
 ## 边界与一致性
 
@@ -33,6 +37,8 @@ uv sync --project services/data --frozen
 # 本机一次性 PostgreSQL；测试另建随机名称 UTF-8 数据库并在结束后删除。
 NETHER_TEST_DATABASE_URL='postgresql://localhost:55432/postgres?sslmode=disable' \
   uv run --project services/data --frozen pytest services/data/tests -q
+# 无数据库的实际 Next route → HMAC → Python parser 契约验证：
+pnpm verify:telemetry-bridge
 ```
 
 ```python
