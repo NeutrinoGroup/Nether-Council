@@ -1,8 +1,10 @@
-import { expect, test, type WebSocketRoute } from "@playwright/test";
+import { expect, test, type WebSocketRoute } from "./fixtures";
 
 // Synthetic protocol/PCM evidence. This does not certify a live provider call.
 test("PCM spectrum, subtitles, interruption and the exportable ritual form one encounter", async ({ page }) => {
-  test.setTimeout(45000);
+  // The full encounter includes cold Next/GLB loading on software-rendered CI.
+  // Keep each interaction bounded below; do not use the global budget as latency evidence.
+  test.setTimeout(90000);
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
   const id = "77777777-7777-4777-8777-777777777777", now = Date.now();
   const session = { id, characterId: "meng-po", locale: "zh", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
@@ -43,8 +45,12 @@ test("PCM spectrum, subtitles, interruption and the exportable ritual form one e
   await page.getByRole("button", { name: "结束对话", exact: true }).click();
   await page.getByRole("button", { name: "干了这碗南瓜孟婆汤" }).click();
   await expect(page.locator(".letting-go-ritual")).toHaveAttribute("data-released", "true");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "下载身份卡 PNG" }).click();
-  expect((await download).suggestedFilename()).toMatch(/\.png$/);
+  const downloadButton = page.getByRole("button", { name: "下载身份卡 PNG" });
+  await expect(downloadButton).toBeEnabled({ timeout: 10000 });
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 5000 }),
+    downloadButton.click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/\.png$/);
   expect(errors).toEqual([]);
 });
