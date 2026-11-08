@@ -32,7 +32,7 @@ export async function runVoiceLatencyBenchmark(options?: { profile?: "baseline" 
   const provider = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   const edge = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   let upstream: WebSocket | undefined, relayFinished: Promise<void> | undefined;
-  const providerMessages: { type: string }[] = [];
+  const providerMessages: { type: string; session?: { instructions?: string } }[] = [];
   const events: ServerMessage[] = [];
   let view: VoiceView = idleView;
   let client: VoiceClient | undefined;
@@ -142,6 +142,11 @@ export async function runVoiceLatencyBenchmark(options?: { profile?: "baseline" 
         evidence: "Simulated regression baseline, not live provider or acoustic acceptance.",
       },
       instructionUpdates: providerCount("session.update"),
+      // New turn state legitimately changes the prompt; only identical updates are redundant.
+      redundantInstructionUpdates: providerMessages.filter((event, index, messages) =>
+        event.type === "session.update" && typeof event.session?.instructions === "string" &&
+        messages.slice(0, index).some(previous => previous.type === "session.update" && previous.session?.instructions === event.session?.instructions)
+      ).length,
       samples: view.latencySamples,
       summary,
       timingEvents: events.flatMap(event => "timing" in event && event.timing ? [{ type: event.type, ...("responseId" in event ? { responseId: event.responseId } : {}), timing: event.timing }] : []),
@@ -163,7 +168,7 @@ export async function runVoiceLatencyBenchmark(options?: { profile?: "baseline" 
   }
 }
 
-type ProtocolReport = { samples: VoiceView["latencySamples"]; instructionUpdates: number };
+type ProtocolReport = { samples: VoiceView["latencySamples"]; instructionUpdates: number; redundantInstructionUpdates: number };
 
 /** Adds the silence BEFORE provider speech_stopped, which existing telemetry cannot see.
  * Processing an unnecessary update is modeled at 25ms, not an asserted network RTT.
@@ -172,7 +177,7 @@ type ProtocolReport = { samples: VoiceView["latencySamples"]; instructionUpdates
 function modelProfile(report: ProtocolReport, profile: "baseline" | "optimized") {
   const baseline = profile === "baseline";
   const continuation = report.samples.find(sample => sample.responseId === "tool-continuation")!.toolContinuationMs!;
-  const redundantUpdates = baseline ? 1 : Math.max(0, report.instructionUpdates - 1);
+  const redundantUpdates = baseline ? 1 : report.redundantInstructionUpdates;
   const turns = CharacterId.options.flatMap(characterId => [1, 2, 3, 4, 5].map(turn => {
     const sample = report.samples.find(sample => sample.responseId === `turn-${turn}`)!;
     const vadSilenceMs = baseline ? (characterId === "meng-po" ? 800 : 350) : getVadConfig(characterId, "en").silence_duration_ms;
