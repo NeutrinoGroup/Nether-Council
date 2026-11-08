@@ -2,6 +2,8 @@
 
 ![Nether Council · 黄泉议会 — Halloween Poster](assets/concept/nether-council-poster.jpg)
 
+![Nether Council · 黄泉议会 — Concept Poster](assets/concept/黄泉议会：万圣黑客松概念海报-3.png)
+
 **Dead or Alive. Everyone Has a Voice.**  
 **生死之间，人人都有发言权。**
 
