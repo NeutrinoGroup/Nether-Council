@@ -1,4 +1,44 @@
-# Nether Council · 黄泉议会
+<div align="center">
+
+![Nether Council — 黄泉议会](assets/brand/nether-council-hero.svg)
+
+**Dead or Alive. Everyone Has a Voice.**  
+**生死之间，人人都有发言权。**
+
+[**Enter the Council · 立即体验**](https://ghost.oodai.space/) · [**Meet the Cast · 认识角色**](https://ghost.oodai.space/#cast) · [**Read the Docs · 项目文档**](docs/progress.md)
+
+</div>
+
+![Live voice encounter · 实时语音互动](assets/brand/voice-encounter.svg)
+
+> 七位来自东西方传说的角色，在同一场万圣节聚会中等待你的声音。打开浏览器，与他们实时对话、自然插话，收获专属身份卡。  
+> Seven characters. One supernatural party. Your voice changes the story.
+
+### Enter the afterlife · 走进黄泉
+
+<div align="center">
+  <a href="https://ghost.oodai.space/"><img alt="忘川月影茶坊 · Moonlit Tea House" src="assets/concept/忘川月影茶坊__end__-1.png" width="48%"></a>
+  <a href="https://ghost.oodai.space/"><img alt="雨夜冥界巡检站 · Night Watch" src="assets/concept/雨夜冥界巡检站-2.png" width="48%"></a>
+</div>
+
+<details>
+<summary><b>Concept art · 世界观与美术设计</b></summary>
+<br>
+<p align="center">
+<img alt="黄泉议会万圣节概念设计" src="assets/concept/黄泉议会：万圣黑客松概念图板.png" width="80%">
+</p>
+</details>
+
+### An encounter, not a chatbot · 不止于聊天
+
+| Explore · 探索 | Speak · 对话 | Remember · 留念 |
+| :--- | :--- | :--- |
+| 选择七位独特的万圣节角色 | 浏览器双工语音、即时打断与双语字幕 | 生成专属身份卡，分享你的冥界身份 |
+| Pick your supernatural companion | Natural voice, barge-in & bilingual captions | Take home your afterlife identity card |
+
+---
+
+## Project overview · 项目概览
 
 中式神仙 × 西式万圣派对 × 当代生活梗。通过 Web 与经典角色全双工语音互动，带走一张专属身份卡，邀请朋友继续体验。
 
