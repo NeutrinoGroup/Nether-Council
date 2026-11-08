@@ -87,4 +87,5 @@ test("OAuth start issues independent state and PKCE challenge", () => {
   const aURL = new URL(a.headers.get("location")!); const bURL = new URL(b.headers.get("location")!);
   expect(aURL.searchParams.get("state")).not.toBe(bURL.searchParams.get("state"));
   expect(aURL.searchParams.get("code_challenge_method")).toBe("S256"); expect(a.headers.get("set-cookie")).toContain("HttpOnly");
+  expect(aURL.searchParams.get("prompt")).toBe("select_account");
 });
