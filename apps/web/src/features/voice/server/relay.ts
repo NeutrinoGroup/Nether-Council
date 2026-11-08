@@ -1,4 +1,4 @@
-import { parseTool, sceneInstructions } from "./tools";
+import { parseTool } from "./tools";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { z } from "zod";
@@ -6,7 +6,7 @@ import { UiAction, parseClientMessage, type CharacterId, type Locale, type Capti
 import { recordTurn, encounterProgress, getCharacter } from "@nether/party-core";
 import { characterPrompt, openingPrompt } from "./prompt";
 import { parseSoulCall, soulStageInstruction } from "./soul-tools";
-import { endConversation, parseSearchQuery, searchWeb, sessionToolInstructions, toolsForCharacter, type WebSearch } from "./tool-registry";
+import { endConversation, parseSearchQuery, searchWeb, toolsForCharacter, type WebSearch } from "./tool-registry";
 import { TranslationQueue, createTranslator } from "../../captions/server/translation-queue";
 import type { TextConfig } from "../../../shared/server/text";
 import { generateIdentity } from "../../verdict/server/generator";
@@ -53,6 +53,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     let finalizing = false;
     let farewellRequested = false;
     let resumeTurnsState: { role: "user" | "assistant"; text: string }[] = [];
+    let resumedPromptTurns: ConfirmedTurn[] = [];
     let lastSentInstructions = "";
     let userTurnCount = 0, ritualCompleted = false, toolContinuations = 0;
     const sessionTools = { conversationEnded: false, searchCount: 0 };
@@ -63,7 +64,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
     const responsesWithTools = new Set<string>();
     const responsesWithAudio = new Set<string>();
     const isMengPo = session.characterId === "meng-po";
-    const instructions = () => `${characterPrompt(session.characterId, session.locale)}${isMengPo ? "" : `\n${sceneInstructions}`}\n${sessionToolInstructions}${isMengPo ? `\n当前状态（可信服务端计数）：${soulStageInstruction(userTurnCount, ritualCompleted)}` : ""}`;
+    // Assistant replies already live upstream; re-embedding them would resend instructions on tool continuation.
+    const instructions = () => characterPrompt(session.characterId, session.locale, [...resumedPromptTurns, ...confirmedTurns.filter(turn => turn.speaker === "user")],
+      isMengPo ? soulStageInstruction(userTurnCount, ritualCompleted)
+        : session.locale === "zh"
+          ? `已收到${userTurnCount}次用户有效发言。${userTurnCount >= 3 ? "自然祝福收尾，不再追问；仅在用户明确请求时调用仪式。" : "接住真实细节，最多追问一个问题；开场不可结束。"}`
+          : `${userTurnCount} confirmed user turns. ${userTurnCount >= 3 ? "Offer a natural blessing without more questions; perform the ritual only on explicit request." : "Acknowledge real details with at most one question; never end at opening."}`);
     const generation = new AbortController();
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -424,7 +430,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           confirmedTurns = recordTurn(confirmedTurns, userCaption);
           if (!userItems.has(event.item_id) && event.transcript.trim()) {
             userItems.add(event.item_id); userTurnCount++; toolContinuations = 0;
-            if (isMengPo) syncInstructions();
+            syncInstructions();
           }
           emitCaption(userCaption);
         } else if (event.type === "response.done" && event.response && !canceled.has(event.response.id) && event.response.id === activeResponse) {
@@ -464,6 +470,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         epoch = event.epoch;
         clearTimeout(startTimer);
         resumeTurnsState = event.resumeTurns ?? [];
+        resumedPromptTurns = resumeTurnsState.map((turn, index) => ({ id: `resume_${index}`, speaker: turn.role === "user" ? "user" : "character", locale: session.locale, text: turn.text, revision: 1 }));
         userTurnCount = Math.max(event.resumeUserTurns ?? 0, resumeTurnsState.filter(t => t.role === "user").length);
         ritualCompleted = event.ritualCompleted ?? false;
         if (!upstream) {
@@ -497,7 +504,7 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
         const caption: Caption = { sessionId: session.id, epoch, responseId: itemId, segmentId: itemId, revision: 1, speaker: "user", sourceLocale: session.locale, sourceText: event.text, final: true };
         confirmedTurns = recordTurn(confirmedTurns, caption); emitCaption(caption);
         userItems.add(itemId); userTurnCount++; toolContinuations = 0;
-        if (isMengPo) syncInstructions();
+        syncInstructions();
         upstreamSend({ type: "conversation.item.create", item: { id: itemId, type: "message", role: "user", content: [{ type: "input_text", text: event.text }] } });
         upstreamSend({ type: "response.create" });
         return;
