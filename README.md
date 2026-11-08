@@ -1,6 +1,6 @@
 <div align="center">
 
-![Nether Council — 黄泉议会](assets/brand/nether-council-hero.svg)
+![Nether Council · 黄泉议会 — Halloween Poster](assets/concept/黄泉议会：万圣黑客松概念海报-3.png)
 
 **Dead or Alive. Everyone Has a Voice.**  
 **生死之间，人人都有发言权。**
@@ -9,7 +9,6 @@
 
 </div>
 
-![Live voice encounter · 实时语音互动](assets/brand/voice-encounter.svg)
 
 > 七位来自东西方传说的角色，在同一场万圣节聚会中等待你的声音。打开浏览器，与他们实时对话、自然插话，收获专属身份卡。  
 > Seven characters. One supernatural party. Your voice changes the story.
