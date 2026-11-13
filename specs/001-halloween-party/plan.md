@@ -150,7 +150,7 @@ interface CaptionSegment {
 | --- | --- | --- |
 | `POST /api/sessions` | 角色、语言、模式、活动 ID、活动入场凭证、可选恢复票据 | 短期签名票据；绑定 sessionId、角色、语言、绝对截止时间与允许能力。浏览器通过短期 HttpOnly cookie 参加同源 WS 握手，密钥不下发 |
 | `GET /api/ws` | 同源请求及有效会话 cookie | 鉴权后升级；默认拒绝无票据、跨源、过期、错误角色和异常大小的消息 |
-| `POST /api/referrals` | 合法会话，或已有签名活动邀请；可选语言/角色 | 有会话时返回签名匿名来源和邀请 URL；无会话时只传播验签通过且剩余至少 235 秒的活动邀请，不伪造来源。登录账号和公开推荐码不授予语音权限 |
+| `POST /api/referrals` | 合法会话，或已有签名活动邀请；卡片可带 sessionId 与 X-Nether-Share；可选语言/角色 | 有会话或卡片凭证时返回绑定原会话的签名来源和邀请 URL；无会话时只传播验签通过且剩余至少 235 秒的活动邀请，不伪造来源。显式无效卡片凭证不回退到 Cookie |
 | `POST /api/events` | 白名单事件批次 | 校验、去重字段、输出结构化日志；不接受对话正文或任意属性 |
 
 同浏览器其他标签页共享 cookie 时，握手后首条 `session.start` 必须带预期 sessionId 并与票据匹配；不匹配则关闭，不能误接到另一标签页角色。匿名票据提供调用范围约束，不等于可靠的每人限额或一次性消费机制。
@@ -211,6 +211,8 @@ Vercel WS 需要 Fluid Compute，连接受 Function 时限约束，重连不保�
 腾讯对旧混元 3D 接口有调整并引导迁移至 TokenHub；`HUNYUAN_3D_API_KEY` 的命名不足以判断当前接入方式。G0 先核对账号实际平台、鉴权与 GLB 导出；优先用现有服务生成并保存资产，官方控制台导出可作为离线生产路径，不为首版搭建运行时生成服务。[腾讯官方调整说明](https://cloud.tencent.com/announce/detail/2403)。
 
 ## 8. 分享归因与观测
+
+卡片权限采用 [ADR 0012](../../docs/adr/0012-card-sharing-capability.md)：入场同时返回独立 purpose 的 `share` 凭证，固定有效至原入场起 24 小时或活动截止。前端以 sessionId 存储，通过请求头提交给分享接口和六类卡片事件；语音、入场、结果接口不能使用它。事件身份与上游来源从该签名上下文恢复，不受另一标签页 Cookie 覆盖。卡片语言切换保留原签名链接，只修改 `lang`。该凭证不是专属结果已生成的服务端证明。
 
 邀请 URL 使用 `/?ref=<signed-source>&invite=<campaign-pass>&character=<id>&lang=<zh|en>`。来源 token 只含匿名 sourceSessionId／campaignId／签发与过期时间，默认 7 天有效，HMAC 签名；它只用于归因，不授权调用付费模型。独立签名的 campaign-pass 用于有效活动窗口内的入场，分享继承原窗口、不延长活动有效期。两者均不是上游 API 凭据。朋友可以修改角色和语言；来源仍有效不代表活动语音额度仍开放。
 

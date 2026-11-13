@@ -3,6 +3,7 @@ import { RECONNECT_DELAYS_MS, applyTranslation, encounterProgress, isStoryText, 
 import { demoAction, demoAudio, demoLines } from "./demo";
 import { AudioEngine } from "./audio/engine";
 import { getVisitorId } from "../analytics/visitor";
+import { rememberCardShare } from "../card/share-access";
 export type SoulSoupView = { mood: SoulMood; worries: string[]; ritual?: { callId: string; blessing: string } };
 export type VoiceEngine = Pick<AudioEngine, "start" | "prepareOutput" | "play" | "stopCapture" | "mute" | "rms" | "isPlaying" | "analysers" | "settings"> & { clear(): number | void; stop(): number | void; queuedMs?(): number };
 type ResponseLatency = { sample: Parameters<typeof evaluateTurnSample>[0]; turnStoppedAt?: number; firstAudio: boolean };
@@ -193,6 +194,7 @@ export class VoiceClient {
       const body = await response.json();
       const session = Session.parse(body.session);
       if (this.disposed || this.demo) return;
+      rememberCardShare(session.id, body.share);
       this.update({ session });
       this.connect(true);
     } catch {
@@ -280,6 +282,7 @@ export class VoiceClient {
       if (!response.ok) return this.fail(typeof body.error === "string" ? body.error : "ADMISSION_FAILED");
       const session = Session.parse(body.session);
       if (this.disposed || this.demo) return;
+      rememberCardShare(session.id, body.share);
       try {
         const cached = sessionStorage.getItem(`nc_result_${session.id}`);
         if (cached) {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ConfirmedTurn } from "@nether/contracts";
 import { serverConfig } from "@/shared/server/config";
-import { cookieToken, readSession, sameOrigin } from "@/shared/server/tickets";
+import { CARD_SHARE_HEADER, cookieToken, readSession, sameOrigin } from "@/shared/server/tickets";
 import { generateIdentity } from "@/features/verdict/server/generator";
 
 export const runtime = "nodejs";
@@ -13,6 +13,7 @@ const Input = z.strictObject({
 
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (request.headers.has(CARD_SHARE_HEADER)) return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   if (Number(request.headers.get("content-length") ?? 0) > 65_536) return new Response(null, { status: 413 });
 
   const config = serverConfig();
