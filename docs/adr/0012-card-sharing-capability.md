@@ -14,7 +14,7 @@
 
 分享凭证只允许六类事件：`conversation_completed`、`card_rendered`、`card_download_clicked`、`card_download_created`、`invite_copied`、`share_invoked`。事件身份从签名上下文恢复；公开邀请的来源是当前卡片 sessionId，遥测的上游来源仍为原 sourceSessionId。公开 referral token 不具备本人卡片事件权限。
 
-语音握手、新建会话、生成结果三个端点拒绝携带此头的请求。持有人仍可通过原活动邀请，在活动政策允许时新建独立会话；分享凭证自身不授予付费权限。
+语音握手、新建会话、生成结果三个端点拒绝携带此头的请求。持有人仍可通过原活动邀请，或当前主分支已有的经验证账号入口，在活动政策允许时新建独立会话；分享凭证自身不授予付费权限。账号分享的活动签发分支仅用于未声明卡片 sessionId 且未携带分享凭证的请求，不得给原卡片续期或迁移 campaign。
 
 卡片缓存本次成功获得的公开分享 URL。切换中英文只改 `lang`，不重新申请权限。新 session/result/character 清除旧卡片归属；分享请求失败展示重试，不能伪造无签名来源的成功邀请。
 

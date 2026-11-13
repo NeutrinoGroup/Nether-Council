@@ -41,7 +41,14 @@ test("a card keeps its own source when another tab opens a session, and its QR a
     secondSessionId = (await other.json()).session.id;
     const cookie = (await context.cookies()).find(item => item.name === "nc_session")!;
     expect(readSession(cookie.value, sessionSecret)?.session.id).toBe(secondSessionId);
-    await route.continue({ headers: { ...route.request().headers(), cookie: `nc_session=${cookie.value}` } });
+    // Forward through the context API after B's cookie is installed. Cookie
+    // overrides in route.continue are ignored by Chromium/Playwright.
+    const shared = await context.request.post(`${baseURL}/api/referrals`, {
+      headers: { Origin: baseURL!, "X-Nether-Share": route.request().headers()["x-nether-share"] },
+      data: route.request().postDataJSON(),
+    });
+    expect(shared.status()).toBe(200);
+    await route.fulfill({ response: shared });
   });
   await page.routeWebSocket("**/api/ws", socket => { socket.onMessage(() => {}); });
   const completion = page.waitForResponse(response => new URL(response.url()).pathname === "/api/events" && response.request().postDataJSON()?.name === "conversation_completed");
