@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { IdentityResult, Locale } from "@nether/contracts";
 import { normalizeNickname } from "@nether/party-core";
 import { exportCardPngBlob, renderCardToCanvas, type CardRenderOptions } from "./canvas";
+import { cardShareHeaders } from "./share-access";
 
 export interface IdentityCardProps {
   result: IdentityResult;
@@ -17,52 +18,58 @@ export function IdentityCard({
   result,
   initialNickname = "",
   locale: initialLocale,
-  invite = "",
 }: IdentityCardProps) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [nickname, setNickname] = useState<string>(initialNickname);
   const [hideVerdict, setHideVerdict] = useState<boolean>(false);
-  const [shareUrl, setShareUrl] = useState<string>("");
+  const [invitation, setInvitation] = useState<{ key: string; url: string }>();
+  const [shareFailure, setShareFailure] = useState<string>();
+  const [shareRetry, setShareRetry] = useState(0);
   const [rendering, setRendering] = useState<boolean>(true);
   const [renderError, setRenderError] = useState(false);
   const [retry, setRetry] = useState(0);
   const [prepared, setPrepared] = useState<{ options: CardRenderOptions; blob: Blob }>();
   const [copiedKind, setCopiedKind] = useState<"text" | "link" | null>(null);
 
+  const identityKey = `${result.sessionId}:${result.characterId}:${result.id}`;
+  const shareUrl = useMemo(() => {
+    if (invitation?.key !== identityKey) return "";
+    const url = new URL(invitation.url);
+    url.searchParams.set("lang", locale);
+    return url.href;
+  }, [invitation, identityKey, locale]);
+  const shareError = shareFailure === identityKey;
   const options = useMemo(() => ({ result, nickname, hideVerdict, locale, shareUrl }), [result, nickname, hideVerdict, locale, shareUrl]);
   const canDownload = prepared?.options === options && !renderError;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const renderedOnce = useRef<boolean>(false);
+  const renderedOnce = useRef<string>(undefined);
 
   // Obtain signed referral URL
   useEffect(() => {
     let active = true;
+    const abort = new AbortController();
     void (async () => {
       try {
-        const response = await fetch("/api/referrals", { method: "POST" });
-        if (response.ok) {
-          const data = (await response.json()) as { shareUrl: string };
-          if (active && data.shareUrl) {
-            setShareUrl(data.shareUrl);
-            return;
-          }
-        }
-      } catch {}
-      // Fallback if referral API unavailable
-      if (active) {
-        const base = typeof window !== "undefined" ? window.location.origin : "https://ghost.oodai.space";
-        const url = new URL("/play", base);
-        if (invite) url.searchParams.set("invite", invite);
-        url.searchParams.set("character", result.characterId);
-        url.searchParams.set("lang", locale);
-        setShareUrl(url.href);
-      }
+        const response = await fetch("/api/referrals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...cardShareHeaders(result.sessionId) },
+          body: JSON.stringify({ sessionId: result.sessionId }),
+          signal: abort.signal,
+        });
+        if (!response.ok) throw new Error("SHARING_UNAVAILABLE");
+        const data = await response.json();
+        if (typeof data.shareUrl !== "string") throw new Error("INVALID_INVITATION");
+        const url = new URL(data.shareUrl);
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error("INVALID_INVITATION");
+        if (active) { setInvitation({ key: identityKey, url: url.href }); setShareFailure(undefined); }
+      } catch { if (active) setShareFailure(identityKey); }
     })();
     return () => {
       active = false;
+      abort.abort();
     };
-  }, [invite, result.characterId, locale]);
+  }, [identityKey, result.sessionId, shareRetry]);
 
   // Render card to canvas
   useEffect(() => {
@@ -100,21 +107,21 @@ export function IdentityCard({
   }, [options, result.sessionId, shareUrl, retry]);
 
   useEffect(() => {
-    if (!canDownload || renderedOnce.current) return;
+    if (!canDownload || renderedOnce.current === identityKey) return;
     let afterPaint = 0;
     // Wait until React reveals the prepared canvas and the browser has had a
     // frame to display it. Encoding alone is not a completed card preview.
     const frame = requestAnimationFrame(() => {
       afterPaint = requestAnimationFrame(() => {
         const preview = canvasRef.current;
-        if (!preview || preview.hidden || renderedOnce.current) return;
-        renderedOnce.current = true;
+        if (!preview || preview.hidden || renderedOnce.current === identityKey) return;
+        renderedOnce.current = identityKey;
         void emitTelemetry("card_rendered", result.sessionId);
         if (!result.fallback) void emitTelemetry("conversation_completed", result.sessionId);
       });
     });
     return () => { cancelAnimationFrame(frame); cancelAnimationFrame(afterPaint); };
-  }, [canDownload, result.sessionId, result.fallback]);
+  }, [canDownload, identityKey, result.sessionId, result.fallback]);
 
   const handleDownload = () => {
     if (!canDownload || !prepared) return;
@@ -186,7 +193,11 @@ export function IdentityCard({
           hidden={!canDownload}
           style={{ width: "100%", maxWidth: "420px", height: "auto", aspectRatio: "3 / 4", borderRadius: "12px", border: "1px solid var(--line)" }}
         />
-        {rendering && <div className="card-rendering-indicator">{locale === "zh" ? "正在绘制身份卡…" : "Rendering card…"}</div>}
+        {!shareError && (rendering || !shareUrl) && <div className="card-rendering-indicator">{locale === "zh" ? "正在绘制身份卡…" : "Rendering card…"}</div>}
+        {shareError && <div role="alert">
+          <p>{locale === "zh" ? "邀请暂时无法生成，请重试。" : "The invitation is unavailable. Please retry."}</p>
+          <button onClick={() => { setShareFailure(undefined); setShareRetry(value => value + 1); }}>{locale === "zh" ? "重试生成邀请" : "Retry invitation"}</button>
+        </div>}
         {renderError && <div role="alert">
           <p>{locale === "zh" ? "身份卡绘制失败，请重试。" : "The card could not be prepared. Please retry."}</p>
           <button onClick={() => setRetry(value => value + 1)}>{locale === "zh" ? "重新绘制身份卡" : "Render card again"}</button>
@@ -264,11 +275,11 @@ export function IdentityCard({
   );
 }
 
-async function emitTelemetry(name: "card_rendered" | "conversation_completed" | "card_download_clicked" | "card_download_created" | "share_invoked" | "invite_copied", sessionId?: string) {
+async function emitTelemetry(name: "card_rendered" | "conversation_completed" | "card_download_clicked" | "card_download_created" | "share_invoked" | "invite_copied", sessionId: string) {
   try {
     await fetch("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...cardShareHeaders(sessionId) },
       body: JSON.stringify({
         eventId: crypto.randomUUID(),
         sessionId,

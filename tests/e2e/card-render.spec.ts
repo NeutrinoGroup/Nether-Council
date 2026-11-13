@@ -4,6 +4,7 @@ import { readCardQr } from "../../scripts/lib/read-card-qr";
 
 const id = "99999999-9999-4999-8999-999999999999";
 const shareUrl = "https://ghost.oodai.space/play?invite=fixture&ref=fixture&character=meng-po&lang=zh";
+const shareToken = "fixture.private-share-capability";
 
 // A validated cached result isolates the card from provider/voice timing.
 // Card readiness uses the spec's 10-second budget, including async PNG encoding.
@@ -13,7 +14,7 @@ async function openCard(page: Page, referral?: (route: Route) => void, fallback 
   const result = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sessionId: id, characterId: "meng-po", generatedAt: now, fallback, title: { zh: "散会判官", en: "Meeting Adjourner" }, verdict: { zh: "五场会议，留给南瓜汤。", en: "Five meetings, left in the brew." }, warmClosing: { zh: "今晚早点休息。", en: "Rest early tonight." }, tags: [{ zh: "放下", en: "Let go" }, { zh: "休息", en: "Rest" }], sourceTurnIds: ["story"] };
   await page.addInitScript(result => sessionStorage.setItem(`nc_result_${result.sessionId}`, JSON.stringify(result)), result);
   await page.route("**/models/*.glb*", route => route.fulfill({ status: 503 }));
-  await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
+  await page.route("**/api/sessions", route => route.fulfill({ json: { session, share: { token: shareToken, expiresAt: now + 86_400_000 } } }));
   await page.route("**/api/events", route => route.fulfill({ status: 202 }));
   await page.route("**/api/referrals", referral ?? (route => route.fulfill({ json: { shareUrl } })));
   await page.routeWebSocket("**/api/ws", socket => {
@@ -144,4 +145,57 @@ test("a fallback card can be previewed without counting as personalized completi
   await openCard(page, undefined, true);
   await expect(page.locator(".identity-card-canvas")).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => cardTelemetry(page)).toEqual([{ name: "card_rendered", previewVisible: true }]);
+});
+
+test("card referrals and events use the original session capability without publishing it", async ({ page }) => {
+  const requests: { path: string; capability?: string; body: Record<string, unknown> }[] = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (["/api/referrals", "/api/events"].includes(path)) requests.push({ path, capability: request.headers()["x-nether-share"], body: request.postDataJSON() });
+  });
+  await openCard(page);
+  await expect(page.locator(".identity-card-canvas")).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => requests.filter(request => request.path === "/api/events").length).toBeGreaterThanOrEqual(2);
+  const referral = requests.find(request => request.path === "/api/referrals");
+  expect(referral).toMatchObject({ capability: shareToken, body: { sessionId: id } });
+  for (const event of requests.filter(request => request.path === "/api/events")) expect(event).toMatchObject({ capability: shareToken, body: { sessionId: id } });
+  const qr = await readCardQr(page);
+  expect(qr).toBe(shareUrl);
+  expect(qr).not.toContain(shareToken);
+  expect(JSON.stringify(requests.map(request => request.body))).not.toContain(shareToken);
+});
+
+test("changing card language keeps its signed invitation when the API later fails", async ({ page }) => {
+  let requests = 0;
+  let unavailable = false;
+  await openCard(page, route => {
+    requests++;
+    return unavailable ? route.fulfill({ status: 503 }) : route.fulfill({ json: { shareUrl } });
+  });
+  await expect(page.getByRole("button", { name: "下载身份卡 PNG" })).toBeEnabled({ timeout: 10_000 });
+  // Development effect replay can cancel an initial request. The invariant is
+  // that a language change never requests new authorization after readiness.
+  const readyRequests = requests;
+  unavailable = true;
+  await page.locator('input[name="card-locale"][value="en"]').check();
+  await expect(page.getByRole("button", { name: "Download Card PNG" })).toBeEnabled({ timeout: 10_000 });
+  const qr = new URL(await readCardQr(page));
+  expect(qr.searchParams.get("lang")).toBe("en");
+  expect(qr.searchParams.get("ref")).toBe("fixture");
+  expect(requests).toBe(readyRequests);
+});
+
+test("a failed referral request cannot manufacture a shareable card and can be retried", async ({ page }) => {
+  let requests = 0;
+  let unavailable = true;
+  await openCard(page, route => { requests++; return unavailable ? route.fulfill({ status: 503 }) : route.fulfill({ json: { shareUrl } }); });
+  await expect(page.locator(".identity-card-section [role=alert]")).toBeVisible();
+  await expect(page.getByRole("button", { name: "下载身份卡 PNG" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "复制邀请链接" })).toBeDisabled();
+  const failedRequests = requests;
+  unavailable = false;
+  await page.getByRole("button", { name: "重试生成邀请" }).click();
+  await expect(page.getByRole("button", { name: "下载身份卡 PNG" })).toBeEnabled({ timeout: 10_000 });
+  expect(await readCardQr(page)).toBe(shareUrl);
+  expect(requests).toBe(failedRequests + 1);
 });
