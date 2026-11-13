@@ -6,6 +6,17 @@ export const CampaignClaims = z.strictObject({ kind: z.literal("campaign"), camp
 export const ReferralClaims = z.strictObject({ kind: z.literal("referral"), campaignId: z.string().min(1).max(80), sourceSessionId: z.uuid(), ...Expiring });
 export const SessionClaims = z.strictObject({ kind: z.literal("session"), session: Session, campaign: CampaignClaims, sourceSessionId: z.uuid().optional(), visitorId: z.uuid().optional(), ...Expiring });
 export type SessionClaims = z.infer<typeof SessionClaims>;
+export const CARD_SHARE_HEADER = "X-Nether-Share";
+export const CARD_SHARE_TTL_MS = 86_400_000;
+// This capability retains the original voice deadline as identity context only.
+// Its purpose cannot pass SessionClaims, CampaignClaims or ReferralClaims.
+export const ShareClaims = SessionClaims.extend({ kind: z.literal("share") }).refine(
+  c => c.issuedAt === c.session.createdAt && c.expiresAt === Math.min(c.issuedAt + CARD_SHARE_TTL_MS, c.campaign.expiresAt),
+  "Invalid fixed card-sharing bounds",
+);
+export function readCardShare(request: Request, secret: string, now = Date.now()) {
+  return verifyTicket(request.headers.get(CARD_SHARE_HEADER) ?? "", secret, ShareClaims, now);
+}
 function digest(payload: string, secret: string) {
   if (secret.length < 32) throw new Error("SIGNING_SECRET_MISSING");
   return createHmac("sha256", secret).update(payload).digest();

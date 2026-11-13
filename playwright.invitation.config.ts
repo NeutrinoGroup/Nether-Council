@@ -6,7 +6,7 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Inv
 
 export default defineConfig({
   ...base,
-  testMatch: "invitation.spec.ts",
+  testMatch: ["invitation.spec.ts", "card-share-http.spec.ts"],
   testIgnore: [],
   outputDir: "artifacts/invitation-test-results",
   use: { ...base.use, baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },

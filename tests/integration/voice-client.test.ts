@@ -280,3 +280,12 @@ test("shared UI actions preserve scene and soul state, accept both search status
   action("offline", "web_search_status", { query: "weather", status: "fallback" }, "next");
   expect(view?.scene?.searchStatus?.status).toBe("fallback");
 });
+
+test.each(["start", "prewarm"] as const)("%s retains the card capability for the original session after voice stops", async method => {
+  const share = { token: "fixture.private-share-capability", expiresAt: Date.now() + 86_400_000 };
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ session, share }) })));
+  current = new VoiceClient(() => {});
+  await current[method]("en", "fixture");
+  current.stop();
+  expect(sessionStorage.setItem).toHaveBeenCalledWith(`nc_card_share_${id}`, JSON.stringify({ sessionId: id, ...share }));
+});
