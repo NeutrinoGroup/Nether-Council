@@ -4,6 +4,7 @@ import { POST as refer } from "../../apps/web/src/app/api/referrals/route";
 import { POST as record } from "../../apps/web/src/app/api/events/route";
 import { POST as verdict } from "../../apps/web/src/app/api/verdict/route";
 import { GET as voice } from "../../apps/web/src/app/api/ws/route";
+import { identityToken } from "../../apps/web/src/lib/authSession";
 import { ReferralClaims, readSession, signTicket, verifyTicket } from "../../apps/web/src/shared/server/tickets";
 
 vi.mock("@vercel/functions", () => ({ upgradeWebSocket: vi.fn(() => { throw new Error("Unexpected paid connection"); }) }));
@@ -18,7 +19,7 @@ const log = vi.spyOn(console, "log").mockImplementation(() => {});
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(startedAt);
   vi.stubEnv("VOICE_ENABLED", "true"); vi.stubEnv("QWEN_DUPLEX_API_KEY", "fixture-only");
-  for (const name of ["SESSION_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET"]) vi.stubEnv(name, secret);
+  for (const name of ["AUTH_SIGNING_SECRET", "SESSION_SIGNING_SECRET", "CAMPAIGN_SIGNING_SECRET", "REFERRAL_SIGNING_SECRET"]) vi.stubEnv(name, secret);
   vi.stubEnv("NEXT_PUBLIC_CAMPAIGN_ID", "pilot");
   vi.stubEnv("NETHER_DATA_INGEST_URL", "https://data.test"); vi.stubEnv("NETHER_DATA_INGEST_SECRET", secret);
   vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 202 })));
@@ -118,4 +119,29 @@ test("public referral, expired share, tampering and campaign changes reject with
   const b = await admission();
   expect((await refer(request("/api/referrals", { sessionId: a.session.id }, b.cookie, a.share.token))).status).toBe(401);
   expect((await record(request("/api/events", cardEvent(a.session.id), b.cookie, a.share.token))).status).toBe(403);
+});
+
+
+test("signed-in account fallback cannot renew or replace a card's signed campaign", async () => {
+  const identity = `nc_identity=${identityToken("did:nether:google:card-test", false, { email: "card@example.test", name: "Fixture", referralCode: "nc_fixture" })}`;
+  const a = await admission(600_000);
+  for (const token of ["", "tampered.invalid"]) {
+    expect((await refer(request("/api/referrals", { sessionId: a.session.id }, identity, token))).status).toBe(401);
+    expect((await record(request("/api/events", cardEvent(a.session.id), `${identity}; ${a.cookie}`, token))).status).toBe(403);
+  }
+  vi.stubEnv("NEXT_PUBLIC_CAMPAIGN_ID", "changed");
+  expect((await refer(request("/api/referrals", { sessionId: a.session.id }, identity, a.share.token))).status).toBe(401);
+  expect((await record(request("/api/events", cardEvent(a.session.id), identity, a.share.token))).status).toBe(403);
+  vi.stubEnv("NEXT_PUBLIC_CAMPAIGN_ID", "pilot");
+  vi.setSystemTime(startedAt + 365_001);
+  // A valid share capability cannot turn a closing campaign into seven more days.
+  expect((await refer(request("/api/referrals", { sessionId: a.session.id }, identity, a.share.token))).status).toBe(401);
+  expect((await record(request("/api/events", cardEvent(a.session.id), identity, a.share.token))).status).toBe(202);
+  vi.setSystemTime(startedAt + 600_000);
+  expect((await refer(request("/api/referrals", { sessionId: a.session.id }, identity, a.share.token))).status).toBe(401);
+  expect((await record(request("/api/events", cardEvent(a.session.id), identity, a.share.token))).status).toBe(403);
+  // The separate account-sharing flow remains available, without old attribution.
+  const accountShare = await refer(request("/api/referrals", {}, identity));
+  expect(accountShare.status).toBe(200);
+  expect(new URL((await accountShare.json()).shareUrl).searchParams.has("ref")).toBe(false);
 });
