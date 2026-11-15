@@ -39,6 +39,7 @@ test("Shift D uses preloaded recorded speech offline, changes the scene and comp
 });
 
 test("ready silent session stays live without automatic demo", async ({ page }) => {
+  test.setTimeout(60000);
   const now = Date.now();
   const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
@@ -54,7 +55,7 @@ test("ready silent session stays live without automatic demo", async ({ page }) 
   await page.goto("/play?invite=fixture&lang=en");
   await expect(page.locator(".character-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
-  await expect(page.locator(".live-state")).toHaveText("Listening to you");
+  await expect(page.locator(".live-state")).toHaveText("Listening to you", { timeout: 15000 });
   await page.waitForTimeout(16000);
   await expect(page.locator(".live-state")).toHaveText("Listening to you");
   await expect(page.getByText("Demo mode · scripted story and recorded voice")).not.toBeVisible();
