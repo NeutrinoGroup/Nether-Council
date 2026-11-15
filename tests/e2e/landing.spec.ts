@@ -16,6 +16,8 @@ test("same-page threshold preserves admission and waits for an explicit micropho
   expect(microphoneRequests).toBe(0);
   await page.getByRole("button", { name: "返回人间" }).click();
   await expect(page.getByRole("button", { name: "推门，遇见孟婆" })).toBeFocused();
+  // The fourth card is outside the mobile reel until selected through its controls.
+  await page.getByRole("button", { name: "钟馗 (4/7)", exact: true }).click();
   await page.getByRole("link", { name: "与这位角色开聊: 钟馗", exact: true }).click();
   await expect(page.getByRole("heading", { name: /钟馗\s*今夜，听你说。/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "开麦，向钟馗倾诉" })).toBeEnabled();
