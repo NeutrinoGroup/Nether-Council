@@ -10,4 +10,6 @@
 
 另一次真实模型检查在播报期间输入 macOS 合成的“嗯”：后续仍收到 57 块音频，没有报告语音开始或取消事件。这仅是单一样本的短附和检查。
 
+实时浏览器套件中的两类自动演示预期在 main 原始通话代码上同样失败。将其校正为当前产品策略：健康连接的静音保持在线，麦克风拒绝明确报错，用户可手动选择演示；没有修改产品的演示策略。
+
 协议依据：[Qwen 客户端事件](https://platform.qianwenai.com/docs/api-reference/qwen-audio-realtime/client-events)。

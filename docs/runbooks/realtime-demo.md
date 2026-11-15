@@ -36,11 +36,12 @@ latency; evaluate those against the real provider and the room's microphone setu
    Interrupt stops the local speech; End conversation releases all audio resources.
    Click the normal start button to return to live mode with a fresh client.
 5. Rehearse denied microphone, pending permission, network loss and server silence.
-   Connection/first-reply waits and reply gaps switch after 3 seconds without
-   progress. `speech.stopped` starts the reply timer; `speech.started` cancels it.
-   Generation completion stops the timer while queued audio finishes. The app also
-   pings the edge every second and switches when a ping has no pong for 3 seconds.
-   Ordinary silence with a healthy connection never switches to demo.
+   The live page reports permission/connection errors explicitly; it does not
+   automatically switch to demo. Use **Shift + D** to choose demo. Clients that
+   explicitly enable `demoFallback` use a 15-second default timeout.
+   `speech.stopped` starts that reply timer; `speech.started` cancels it, and
+   `turn_invalid` does not start one. Generation completion stops the timer while
+   queued audio finishes. Ordinary silence with a healthy connection stays live.
 
 Both `/play` and the new immersive home-page encounter share this client, fallback
 form, timers and scene state. `UI_ACTION` updates mood lights immediately and puts
