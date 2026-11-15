@@ -55,7 +55,7 @@ jobs:
       - run: pnpm verify:telemetry-bridge
       - run: pnpm check
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e --workers=2 --reporter=line
+      - run: NETHER_E2E_PRODUCTION=1 pnpm test:e2e --workers=2 --reporter=line
       - run: pnpm test:e2e:invitation
       - uses: actions/upload-artifact@v4
         if: failure()
