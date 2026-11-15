@@ -38,25 +38,37 @@ test("Shift D uses preloaded recorded speech offline, changes the scene and comp
   expect(errors).toEqual([]);
 });
 
-test("ready socket without reply switches to demo after 3 seconds", async ({ page }) => {
+test("ready silent session stays live without automatic demo", async ({ page }) => {
   const now = Date.now();
   const session = { id, characterId: "meng-po", locale: "en", mode: "personal", createdAt: now, captureUntil: now + 180000, expiresAt: now + 235000 };
   await page.route("**/api/sessions", route => route.fulfill({ json: { session } }));
-  await page.routeWebSocket("**/api/ws", socket => { socket.onMessage(() => {}); });
+  await page.routeWebSocket("**/api/ws", socket => {
+    let seq = 0;
+    const send = (event: object) => socket.send(JSON.stringify({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: id, epoch: 0, seq: seq++, ...event }));
+    socket.onMessage(raw => {
+      const event = JSON.parse(String(raw));
+      if (event.type === "session.start" && !event.prewarm) send({ type: "session.ready", session });
+      if (event.type === "ping") send({ type: "pong" });
+    });
+  });
   await page.goto("/play?invite=fixture&lang=en");
   await expect(page.locator(".character-stage")).toHaveAttribute("data-model-loaded", "true", { timeout: 20000 });
-  const before = Date.now();
   await page.getByRole("button", { name: "Turn on mic & meet Meng Po" }).click();
-  await expect(page.getByText("Demo mode · scripted story and recorded voice")).toBeVisible({ timeout: 10000 });
-  expect(Date.now() - before).toBeLessThan(10000);
+  await expect(page.locator(".live-state")).toHaveText("Listening to you");
+  await page.waitForTimeout(16000);
+  await expect(page.locator(".live-state")).toHaveText("Listening to you");
+  await expect(page.getByText("Demo mode · scripted story and recorded voice")).not.toBeVisible();
 });
 
-test("microphone denied still plays the demo and supports typed continuation", async ({ page }) => {
+test("microphone denial is explicit; manual demo supports typed continuation", async ({ page }) => {
   await page.addInitScript(() => {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
   });
   await page.goto("/play?invite=fixture&lang=zh");
   await page.getByRole("button", { name: "开麦，找孟婆聊聊" }).click();
+  await expect(page.getByText("麦克风被拒绝了。请在地址栏允许麦克风后重试。", { exact: true })).toBeVisible();
+  await expect(page.getByText("演示模式 · 预置故事与语音")).not.toBeVisible();
+  await page.keyboard.press("Shift+KeyD");
   await expect(page.getByText("演示模式 · 预置故事与语音")).toBeVisible();
   await expect.poll(async () => Number(await page.locator(".character-stage").getAttribute("data-mouth-level")), { timeout: 20000 }).toBeGreaterThan(0);
   await page.getByLabel("也可以打字说").fill("我想放下烦恼");
