@@ -30,11 +30,10 @@ type Encounter = {
 // Exercise VoiceClient's real capture/playback boundary without requiring an audio device.
 class TestAudio implements VoiceEngine {
   capture?: (audio: string) => void;
-  speech?: () => void;
   playing = false;
   capturing = false;
-  start = vi.fn(async (capture: (audio: string) => void, speech?: () => void) => {
-    this.capture = capture; this.speech = speech; this.capturing = true;
+  start = vi.fn(async (capture: (audio: string) => void) => {
+    this.capture = capture; this.capturing = true;
   });
   prepareOutput = vi.fn(async () => {});
   play = vi.fn((audio: string) => { this.playing = audio.length > 0; });
@@ -130,7 +129,7 @@ async function harness(config: Partial<Parameters<typeof relayVoice>[2]> = {}) {
     const now = Date.now();
     const session: Session = { id: crypto.randomUUID(), characterId, locale, mode: "personal", createdAt: now, captureUntil: now + lifetime, expiresAt: now + lifetime + 1000 };
     const audio = new TestAudio();
-    const client = new VoiceClient(view => { encounter.view = view; encounter.views.push(view); }, { engine: audio, localVad: true });
+    const client = new VoiceClient(view => { encounter.view = view; encounter.views.push(view); }, { engine: audio });
     const encounter: Encounter = { session, client, audio, view: idleView, views: [], received: [], connections: [] };
     encounters.set(session.id, encounter); clients.push(encounter.client);
     await encounter.client.start(locale, session.id, undefined, "", characterId);
@@ -247,15 +246,15 @@ describe("full-duplex relay + VoiceClient regression matrix", () => {
     expect(encounter.audio.stop).toHaveBeenCalledOnce();
     expect(encounter.view.draft?.turns.filter(turn => turn.speaker === "user").map(turn => turn.text)).toEqual(stories);
   });
-  it.each([1, 3])("%i consecutive barge-ins stop locally before cancellation and reject stale audio, captions and tools", async interruptions => {
+  it.each([1, 3])("%i consecutive provider-confirmed barge-ins stop playback and reject stale audio, captions and tools", async interruptions => {
     const fixture = await harness();
     const encounter = await fixture.start();
     for (let index = 0; index < interruptions; index++) {
       const id = `interrupted-${index}`;
       await speak(encounter, id, `Reply ${index}`, pcm(index + 1));
       const clears = encounter.audio.clear.mock.calls.length;
-      encounter.audio.speech!();
-      // No event-loop yield: playback must stop before any server acknowledgement.
+      emit(encounter, { type: "input_audio_buffer.speech_started", item_id: `barge-${index}` });
+      await waitFor(() => encounter.audio.clear.mock.calls.length > clears);
       expect(encounter.audio.clear).toHaveBeenCalledTimes(clears + 1);
       expect(encounter.audio.playing).toBe(false);
       expect(encounter.view.caption).toBeUndefined();

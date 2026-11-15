@@ -95,7 +95,7 @@ test.each([false, true])("base64 codec covers all signed PCM16 values, chunk bou
   expect(() => decodePcm16Base64ToFloat32(encodePcmBase64(Uint8Array.of(1, 2, 3)))).toThrow("Invalid PCM16");
 });
 
-test("local barge-in requires two consecutive frames above RMS 0.038 and rearms after silence", async () => {
+test("loud microphone frames keep uploading without locally clearing playback", async () => {
   const nodes: FakeNode[] = [];
   class FakeNode {
     port = { onmessage: undefined as ((event: { data: ArrayBuffer }) => void) | undefined, postMessage: vi.fn() };
@@ -113,26 +113,27 @@ test("local barge-in requires two consecutive frames above RMS 0.038 and rearms 
   const track = { stop: vi.fn(), enabled: true };
   vi.stubGlobal("AudioContext", FakeContext); vi.stubGlobal("AudioWorkletNode", FakeNode);
   vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }) } });
-  const engine = new AudioEngine(), speech = vi.fn(), pcm = vi.fn();
+  const engine = new AudioEngine(), pcm = vi.fn();
   try {
-    await engine.start(pcm, speech);
+    await engine.start(pcm);
+    engine.play("AAA=");
+    const playback = nodes.find(node => node.name === "nether-playback")!;
+    const commands = playback.port.postMessage.mock.calls.length;
     const capture = nodes.find(node => node.name === "nether-capture")!;
     const frame = (amplitude: number) => capture.port.onmessage!({ data: pcm16le(new Int16Array(320).fill(Math.round(amplitude * 32768))) });
-    frame(0.04); frame(0); frame(0.04);
-    expect(speech).not.toHaveBeenCalled();
-    frame(0.04); expect(speech).toHaveBeenCalledTimes(1);
-    frame(0.04); expect(speech).toHaveBeenCalledTimes(1);
-    for (let i = 0; i < 10; i++) frame(0);
-    frame(0.037); frame(0.037); expect(speech).toHaveBeenCalledTimes(1);
-    frame(0.04); frame(0.04); expect(speech).toHaveBeenCalledTimes(2);
-    engine.mute(true); frame(0.04); frame(0.04); expect(speech).toHaveBeenCalledTimes(2);
-    expect(pcm.mock.calls[0][0]).toBe(encodePcmBase64(new Uint8Array(pcm16le(new Int16Array(320).fill(1311)))));
+    for (let i = 0; i < 50; i++) frame(0.5);
+    expect(pcm).toHaveBeenCalledTimes(50);
+    expect(engine.isPlaying()).toBe(true);
+    expect(playback.port.postMessage).toHaveBeenCalledTimes(commands);
+    engine.mute(true); frame(0.5);
+    expect(pcm).toHaveBeenCalledTimes(50);
+    expect(pcm.mock.calls[0][0]).toBe(encodePcmBase64(new Uint8Array(pcm16le(new Int16Array(320).fill(16384)))));
   } finally { engine.stop(); }
 });
 
-test("balanced VAD is configured for every character in both locales", () => {
+test("semantic turn detection is configured for every character in both locales", () => {
   for (const character of CharacterId.options) for (const locale of ["zh", "en"] as const) {
-    expect(getVadConfig(character, locale)).toEqual({ type: "server_vad", threshold: 0.5, prefix_padding_ms: character === "meng-po" ? 240 : 200, silence_duration_ms: character === "meng-po" ? 520 : 340 });
+    expect(getVadConfig(character, locale)).toEqual({ type: "smart_turn_v2", threshold: 0.5 });
   }
 });
 
@@ -176,6 +177,18 @@ async function fixture(characterId: Session["characterId"] = "meng-po", gateway 
     close: async () => { client.close(); await finished; },
   };
 }
+
+test("invalid semantic turns do not start a reply deadline or contaminate response timing", async () => {
+  const f = await fixture();
+  try {
+    f.emit({ type: "input_audio_buffer.speech_started", item_id: "filler" });
+    f.emit({ type: "input_audio_buffer.speech_stopped", item_id: "filler", reason: "turn_invalid" });
+    f.emit({ type: "response.created", response: { id: "marker" } });
+    await waitFor(() => f.received.some(event => event.type === "response.started" && event.responseId === "marker"));
+    expect(f.received.some(event => event.type === "speech.stopped")).toBe(false);
+    expect(f.received.find(event => event.type === "response.started" && event.responseId === "marker")).not.toHaveProperty("timing");
+  } finally { await f.close(); }
+});
 
 test.each(["meng-po", "hei-wuchang"] as const)("%s skips unchanged instruction updates on tool continuations", async character => {
   const f = await fixture(character);
@@ -252,13 +265,13 @@ test("Python gateway consumes canceled PCM and captions for scene and Meng Po se
   expect(stdout).toContain("passed");
 }, 35000);
 
-test("profile comparison reduces modeled P95 by at least 20% and barge-in by 20ms", async () => {
+test("semantic turn latency is not estimated from obsolete fixed VAD or local barge-in timings", async () => {
   const result = await compareVoiceLatencyProfiles();
   expect(result.passed).toBe(true);
-  expect(result.p95Reduction).toBeGreaterThanOrEqual(0.2);
-  expect(result.bargeInImprovementMs).toBe(20);
+  expect(result.p95Reduction).toBeNull();
+  expect(result.bargeInImprovementMs).toBeNull();
   expect(result.baseline.modeled!.redundantInstructionUpdates).toBe(1);
-  expect(result.optimized.modeled!.redundantInstructionUpdates).toBe(0);
-  expect(result.optimized.modeled!.turns).toHaveLength(35);
-  expect(result.optimized.modeled!.turns.every(turn => turn.vadSilenceMs === (turn.characterId === "meng-po" ? 520 : 340))).toBe(true);
+  expect(result.optimized.modeled).toBeUndefined();
+  expect(result.optimized.redundantInstructionUpdates).toBe(0);
+  expect(result.optimized.summary.failedTurns).toBe(0);
 }, 20000);

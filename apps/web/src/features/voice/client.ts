@@ -54,7 +54,7 @@ export class VoiceClient {
   private heartbeatDeadline?: ReturnType<typeof setTimeout>;
   private appliedCalls = new Set<string>();
   private searchingCalls = new Set<string>();
-  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; localVad?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number; engine?: VoiceEngine; measurementMode?: MeasurementMode } = {}) { this.audio = options.engine ?? new AudioEngine(); }
+  constructor(private notify: (view: VoiceView) => void, private options: { demoFallback?: boolean; permissionTimeoutMs?: number; networkTimeoutMs?: number; engine?: VoiceEngine; measurementMode?: MeasurementMode } = {}) { this.audio = options.engine ?? new AudioEngine(); }
   private beginResponseLatency(responseId: string, timing?: ServerTurnTiming, responseStarted = true) {
     if (this.responseLatency?.sample.responseId === responseId) return;
     this.responseLatency = {
@@ -125,7 +125,6 @@ export class VoiceClient {
     this.responseTimer = undefined;
     this.heartbeatDeadline = undefined;
   }
-  private localSpeech = () => { if (this.ready && this.audio.isPlaying() && !this.view.finalizing) this.interrupt(); };
   enterDemo(reason = "MANUAL", locale = this.view.session?.locale ?? this.demoLocale) {
     if (this.disposed || this.demo) return;
     this.failPendingLatency(); this.turnStoppedAt = undefined; this.responseLatency = undefined;
@@ -216,7 +215,7 @@ export class VoiceClient {
         if (!this.ready || this.disposed || this.view.finalizing) return;
         if ((this.socket?.bufferedAmount ?? 0) > 64_000) return this.fail("UPLOAD_BACKLOG");
         this.send({ type: "audio.append", audio });
-      }, this.options.localVad ? this.localSpeech : undefined);
+      });
       if (this.disposed || this.demo) { this.audio.stopCapture(); return; }
       this.update({ phase: "connecting" });
       this.armFallback();
@@ -256,7 +255,7 @@ export class VoiceClient {
         if (!this.ready || this.disposed || this.view.finalizing) return;
         if ((this.socket?.bufferedAmount ?? 0) > 64_000) return this.fail("UPLOAD_BACKLOG");
         this.send({ type: "audio.append", audio });
-      }, this.options.localVad ? this.localSpeech : undefined);
+      });
       if (this.disposed || this.demo) { this.audio.stopCapture(); return; }
       this.update({ phase: "connecting" });
       this.armFallback();

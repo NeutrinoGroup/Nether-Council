@@ -12,9 +12,12 @@ rejects late audio/captions/tool commands for that response, and moves the 3D bo
 into its listening pose. Main-thread playback state clears immediately; actual
 output follows when the audio thread processes the clear message (plus the audio
 device's existing output buffer). `stopMs` measures dispatch time, not an acoustic
-latency guarantee. Optional `new VoiceClient(notify, { localVad: true })` enables a
-60ms sustained-energy detector with 200ms release; server VAD is the default to
-avoid echo-triggered interruptions in noisy rooms.
+latency guarantee. All characters use provider `smart_turn_v2` with threshold 0.5
+to judge interaction intent. The browser continuously uploads microphone frames;
+it never cancels a reply based on local volume. Manual interruption remains
+immediate. Fixed `silence_duration_ms` settings do not apply to semantic turns.
+The loopback latency benchmark cannot estimate semantic endpoint or interruption
+latency; evaluate those against the real provider and the room's microphone setup.
 
 ## Before going on stage
 

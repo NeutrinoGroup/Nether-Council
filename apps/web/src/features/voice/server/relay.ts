@@ -22,6 +22,7 @@ const Upstream = z.looseObject({
   delta: z.string().optional(),
   transcript: z.string().optional(),
   text: z.string().optional(),
+  reason: z.string().optional(),
   response: z.looseObject({ id: z.string(), status: z.string().optional() }).optional(),
   error: z.looseObject({ code: z.string().optional(), type: z.string().optional(), param: z.string().optional(), message: z.string().max(2000).optional() }).optional(),
 });
@@ -30,8 +31,9 @@ type Config = { gatewayUrl?: string; gatewaySecret?: string; realtimeKey: string
 type Outgoing = ServerMessage extends infer T ? T extends ServerMessage ? Omit<T, "protocolVersion" | "eventId" | "sessionId" | "epoch" | "seq"> : never : never;
 
 export function getVadConfig(characterId: CharacterId, locale: Locale) {
-  void locale; // Both supported languages share the same balanced timing profile.
-  return { type: "server_vad" as const, threshold: 0.5, prefix_padding_ms: characterId === "meng-po" ? 240 : 200, silence_duration_ms: characterId === "meng-po" ? 520 : 340 };
+  void characterId; void locale;
+  // Let the provider judge interaction intent; silence_duration_ms only applies to server_vad.
+  return { type: "smart_turn_v2" as const, threshold: 0.5 };
 }
 
 const responseScopedEvents = new Set(["response.audio.delta", "response.audio_transcript.delta", "response.function_call_arguments.done", "UI_ACTION", "gateway.tool_result"]);
@@ -321,6 +323,12 @@ export function relayVoice(client: WebSocket, session: Session, config: Config):
           cancel();
           send({ type: "speech.started" });
         } else if (event.type === "input_audio_buffer.speech_stopped") {
+          // Semantic VAD may discard fillers/noise without generating a reply.
+          // Do not tell the browser to wait for audio that will never arrive.
+          if (event.reason === "turn_invalid") {
+            speechStartedAt = turnStoppedAt = lastVadSpeechMs = undefined;
+            return;
+          }
           if (!finalizing) {
             turnStoppedAt = performance.now();
             lastVadSpeechMs = speechStartedAt === undefined ? undefined : Math.max(0, Math.round(turnStoppedAt - speechStartedAt));
