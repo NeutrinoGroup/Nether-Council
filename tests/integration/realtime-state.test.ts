@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.stubGlobal("location", { protocol: "https:", host: "example.test" }); vi.stubGlobal("WebSocket", Socket);
   vi.stubGlobal("sessionStorage", { getItem: vi.fn(() => null), setItem: vi.fn() });
   vi.stubGlobal("fetch", vi.fn(async (path: string) => path.startsWith("/demo/") ? { ok: true, arrayBuffer: async () => new Uint8Array([1, 0, 2, 0]).buffer } : { ok: true, json: async () => ({ session }) }));
-  client = new VoiceClient(v => { view = v; }, { demoFallback: true, localVad: true });
+  client = new VoiceClient(v => { view = v; }, { demoFallback: true });
 });
 afterEach(() => { client.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -58,17 +58,35 @@ test("manual demo requires neither permission nor a session; pending clip cannot
   expect(audio.play).not.toHaveBeenCalled(); expect(view.phase).toBe("ended");
 });
 
-test("UI commands are exactly once, response-scoped and canceled with speech; local VAD clears playback", async () => {
+test("UI commands are exactly once, response-scoped and canceled with provider speech", async () => {
   await client.start("en", "fixture"); send({ type: "session.ready", session });
   send({ type: "response.started", responseId: "r1" });
   const action = { type: "UI_ACTION", responseId: "r1", callId: "c1", payload: { action: "extract_worry", data: { worry: "deadlines" } } };
   send(action); expect(view.scene?.worry).toBe("deadlines");
   send({ ...action, payload: { action: "extract_worry", data: { worry: "duplicate" } } }); expect(view.scene?.worry).toBe("deadlines");
   audio.isPlaying.mockReturnValue(true);
-  const onSpeech = (audio.start.mock.calls as unknown as [unknown, () => void][])[0][1]; onSpeech();
+  send({ type: "speech.started" });
   expect(audio.clear).toHaveBeenCalled(); expect(view.phase).toBe("listening");
   send({ ...action, callId: "late", payload: { action: "change_mood", data: { mood: "storm" } } });
   expect(view.scene?.mood).toBe("calm");
+  expect(Socket.instances[0].sent.some(event => event.type === "response.cancel")).toBe(true);
+});
+
+test("microphone capture cannot bypass semantic turn detection with local volume cancellation", async () => {
+  await client.start("en", "fixture"); send({ type: "session.ready", session });
+  send({ type: "response.started", responseId: "r1" });
+  send({ type: "audio.delta", responseId: "r1", audio: "AAA=" });
+  audio.isPlaying.mockReturnValue(true);
+  const [capture, localSpeech] = (audio.start.mock.calls as unknown as [(audio: string) => void, (() => void)?][])[0];
+  const clears = audio.clear.mock.calls.length;
+  expect(localSpeech).toBeUndefined();
+  capture("AAA=");
+  expect(Socket.instances[0].sent.at(-1)).toMatchObject({ type: "audio.append", audio: "AAA=" });
+  expect(audio.clear).toHaveBeenCalledTimes(clears);
+  expect(Socket.instances[0].sent.some(event => event.type === "response.cancel")).toBe(false);
+  send({ type: "speech.started" });
+  expect(audio.clear).toHaveBeenCalledTimes(clears + 1);
+  expect(view.phase).toBe("listening");
   expect(Socket.instances[0].sent.some(event => event.type === "response.cancel")).toBe(true);
 });
 
